@@ -745,15 +745,13 @@ static void draw_radar() {
             }
 
             // Labels
-			//if (behind < 180) {
-            if (behind < 360) {
+			/*
+            if (behind < 180) {
                 tft.setTextColor(fade_color, pal->bg);
                 tft.setTextDatum(BL_DATUM);
                 if (a.callsign[0])
-                    tft.drawString(a.callsign, px + 4, py - 2, 1);                
-				
-				//if (behind < 60) {
-                if (behind < 360) {
+                    tft.drawString(a.callsign, px + 4, py - 2, 1);
+				if (behind < 60) {
                     char info[16];
                     if (a.altitude > 0)
                         snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
@@ -767,9 +765,7 @@ static void draw_radar() {
                     }
                 }
                 b.has_label = true;
-            }
-			
-			/*
+            }*/			
 			// Labels：只顯示剛被 sweep 掃到、且總數有上限，減少重疊與半截字
             b.has_label = false;
 			if (behind < 90 && labels_drawn < MAX_LABELS) {
@@ -797,7 +793,7 @@ static void draw_radar() {
                     b.has_label = true;
                     labels_drawn++;
                 }
-            }   */
+            }   
 
             new_blip_count++;
         }
