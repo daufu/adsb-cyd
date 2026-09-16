@@ -703,18 +703,18 @@ static void draw_radar() {
 					new_trail_count++;
 				}
 
-				/* 
+				 
 
 				
 				
 				
 				
 				
-				*/
+				
 				
 				
 				uint16_t fade_color;
-				/*
+				
 
 				
 				
@@ -725,7 +725,7 @@ static void draw_radar() {
 				
 				
 				
-				*/
+				
 				if (a.is_emergency)
 					fade_color = pal->blip_emg;
 				else if (a.is_military)
