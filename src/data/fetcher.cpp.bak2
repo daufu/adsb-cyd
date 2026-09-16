@@ -413,15 +413,8 @@ static void fetch_task(void *param) {
                 } else {
                     _fstats.fetch_fail++;
                     error_log_add("HTTP %d", httpCode);
-					//
-					//上面IF_BLOCK (成功 HTTP 200/HTTP_CODE_OK): 有呼叫 http.end() + http_mutex_release()。
-					//失敗時（超時、429 限流、斷線等）: 這兩行也要加, 否則鎖永遠被占住
-					//之後每次抓都拿不到鎖 → 再也不更新, 畫面永遠顯示舊資料
-					http.end();				//關掉HTTP/TLS
-					http_mutex_release();	//把鎖還回去
                 }
-				
-				//http.end();
+                //http.end();
                 //http_mutex_release();
             }
         } else {
