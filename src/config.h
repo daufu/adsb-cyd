@@ -1,8 +1,8 @@
 #pragma once
 
 // WiFi credentials
-#define WIFI_SSID "hellowifi"  
-#define WIFI_PASS "123456789"  
+#define WIFI_SSID "hello"  
+#define WIFI_PASS "123456789" 
 
 // Home location
 #define HOME_LAT 22.3193   // 香港緯度
@@ -18,7 +18,7 @@ default 75
 tried 20
 */
 #define ADSB_RADIUS_NM 40   
-#define ADSB_POLL_INTERVAL_MS 10000   //10000毫秒=10秒; default=5000
+#define ADSB_POLL_INTERVAL_MS 15000   //15000毫秒=10秒; default=5000
 #define MAX_AIRCRAFT 25	//50
 #define TRAIL_LENGTH 6	//15
 
