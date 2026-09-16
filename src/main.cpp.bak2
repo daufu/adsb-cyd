@@ -122,7 +122,7 @@ static int detail_idx = 0;
 // Sweep
 static float sweep_angle = 0;
 static float prev_sweep_angle = -1;
-#define SWEEP_SPEED 2.0f //稍慢閃少一點. default 3.0f 
+#define SWEEP_SPEED 3.0f
 
 // ---- Differential rendering ----
 
@@ -579,250 +579,240 @@ static void draw_loading() {
 // ---- Radar view ----
 
 static void draw_radar() {
-	
-	
-    static uint32_t last_blip_draw = 0;
-    uint32_t now = millis();
-    bool redraw_blips = (now - last_blip_draw > 200);  // 每 100ms 才重畫飛機一次（可改 50~200）
-    if (redraw_blips) last_blip_draw = now;
-	
-	if (redraw_blips) { 	
-		tft.startWrite(); //<-add: 開始批次 SPI 寫入  
+    if (radar_needs_full_redraw) {
+        tft.fillRect(0, RADAR_Y, LCD_H_RES, RADAR_H, pal->bg);
+        radar_needs_full_redraw = false;
+        prev_blip_count = 0;
+        prev_trail_count = 0;
+        prev_sweep_angle = -1;
+    }
+
+    // Erase old sweep
+    if (prev_sweep_angle >= 0) {
+        float prad = prev_sweep_angle * M_PI / 180.0f;
+        tft.drawLine(RADAR_CX, RADAR_CY,
+            RADAR_CX + (int)(RADAR_R * sinf(prad)),
+            RADAR_CY - (int)(RADAR_R * cosf(prad)), pal->bg);
+    }
+
+    // Erase old trails
+    for (int i = 0; i < prev_trail_count; i++) {
+        TrailState &t = prev_trails[i];
+        for (int j = 1; j < t.count; j++)
+            tft.drawLine(t.x[j-1], t.y[j-1], t.x[j], t.y[j], pal->bg);
+    }
+
+    // Erase old blips
+    for (int i = 0; i < prev_blip_count; i++) {
+        BlipState &b = prev_blips[i];
+        tft.fillCircle(b.x, b.y, b.r, pal->bg);
+        if (b.has_heading) tft.drawLine(b.x, b.y, b.hx, b.hy, pal->bg);
+		        
+		/*	3.3 標籤半截字 + 重疊（核心 UI 優化）
+			問題:
+			擦除固定 fillRect(..., 56, 18)，字較長或兩行時擦不乾淨 → 殘影／半截感。
+			幾乎每架 behind < 180 都畫 callsign，忙區重疊。
+			靠近螢幕邊緣字畫出去。
+		*/
+		//if (b.has_label) tft.fillRect(b.x + 4, b.y - 12, 56, 18, pal->bg);
+        if (b.has_label) {
+            // 擦大一點，避免 callsign + 高度行殘影／半截
+            int lx = b.x + 4;
+            int ly = b.y - 14;
+            if (lx < 0) lx = 0;
+            if (ly < RADAR_Y) ly = RADAR_Y;
+            tft.fillRect(lx, ly, 72, 24, pal->bg);
+        }
 		
-		if (radar_needs_full_redraw) {
-			tft.fillRect(0, RADAR_Y, LCD_H_RES, RADAR_H, pal->bg);
-			radar_needs_full_redraw = false;
-			prev_blip_count = 0;
-			prev_trail_count = 0;
-			prev_sweep_angle = -1;
-		}
+    }
 
-		// Erase old sweep
-		if (prev_sweep_angle >= 0) {
-			float prad = prev_sweep_angle * M_PI / 180.0f;
-			tft.drawLine(RADAR_CX, RADAR_CY,
-				RADAR_CX + (int)(RADAR_R * sinf(prad)),
-				RADAR_CY - (int)(RADAR_R * cosf(prad)), pal->bg);
-		}
+    // Redraw static: rings + crosshair
+    for (int i = 1; i <= 3; i++) {
+        int r = RADAR_R * i / 3;
+        tft.drawCircle(RADAR_CX, RADAR_CY, r, pal->ring);
+    }
+    tft.drawLine(RADAR_CX - RADAR_R, RADAR_CY, RADAR_CX + RADAR_R, RADAR_CY, pal->grid);
+    tft.drawLine(RADAR_CX, RADAR_CY - RADAR_R, RADAR_CX, RADAR_CY + RADAR_R, pal->grid);
 
-		// Erase old trails
-		for (int i = 0; i < prev_trail_count; i++) {
-			TrailState &t = prev_trails[i];
-			for (int j = 1; j < t.count; j++)
-				tft.drawLine(t.x[j-1], t.y[j-1], t.x[j], t.y[j], pal->bg);
-		}
+    // Compass rose: N/S/E/W at ring edges
+    tft.setTextColor(pal->ring, pal->bg);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("N", RADAR_CX, RADAR_CY - RADAR_R + 6, 1);
+    tft.drawString("S", RADAR_CX, RADAR_CY + RADAR_R - 6, 1);
+    tft.drawString("E", RADAR_CX + RADAR_R - 6, RADAR_CY, 1);
+    tft.drawString("W", RADAR_CX - RADAR_R + 6, RADAR_CY, 1);
 
-		// Erase old blips
-		for (int i = 0; i < prev_blip_count; i++) {
-			BlipState &b = prev_blips[i];
-			tft.fillCircle(b.x, b.y, b.r, pal->bg);
-			if (b.has_heading) tft.drawLine(b.x, b.y, b.hx, b.hy, pal->bg);
-					
-			/*	3.3 標籤半截字 + 重疊（核心 UI 優化）
-				問題:
-				擦除固定 fillRect(..., 56, 18)，字較長或兩行時擦不乾淨 → 殘影／半截感。
-				幾乎每架 behind < 180 都畫 callsign，忙區重疊。
-				靠近螢幕邊緣字畫出去。
+    // Sweep line
+    float rad = sweep_angle * M_PI / 180.0f;
+    int sx = RADAR_CX + (int)(RADAR_R * sinf(rad));
+    int sy = RADAR_CY - (int)(RADAR_R * cosf(rad));
+    tft.drawLine(RADAR_CX, RADAR_CY, sx, sy, pal->sweep);
+    prev_sweep_angle = sweep_angle;
+
+    // Home dot
+    tft.fillCircle(RADAR_CX, RADAR_CY, 2, pal->text);
+
+    // Aircraft
+    int new_blip_count = 0;
+    int new_trail_count = 0;
+	int labels_drawn = 0;          // ← 新增
+	const int MAX_LABELS = 6;     // ← 最多 12 個文字標籤，可改 8~15
+		
+    if (aircraft_list.lock(pdMS_TO_TICKS(50))) {
+		
+        for (int i = 0; i < aircraft_list.count && new_blip_count < MAX_AIRCRAFT; i++) {
+            Aircraft &a = aircraft_list.aircraft[i];
+
+            // Apply filter
+            if (!aircraft_passes_filter(a)) continue;
+
+            int px, py;
+            if (!latlon_to_radar(a.lat, a.lon, px, py)) continue;
+
+            int dx = px - RADAR_CX;
+            int dy = py - RADAR_CY;
+            if (dx * dx + dy * dy > RADAR_R * RADAR_R) continue;
+
+            uint8_t opacity = compute_aircraft_opacity(a.stale_since, millis());
+            if (opacity == 0) continue;
+
+            // Trail（設定裡可關閉，省繪圖）
+            if (g_config.trails_enabled && a.trail_count > 1 && new_trail_count < MAX_AIRCRAFT) {
+                TrailState &ts = prev_trails[new_trail_count];
+                ts.count = 0;
+                for (int t = 0; t < a.trail_count && ts.count < TRAIL_LENGTH; t++) {
+                    int tx, ty;
+                    if (latlon_to_radar(a.trail[t].lat, a.trail[t].lon, tx, ty)) {
+                        ts.x[ts.count] = tx;
+                        ts.y[ts.count] = ty;
+                        ts.count++;
+                    }
+                }
+                for (int t = 1; t < ts.count; t++)
+                    tft.drawLine(ts.x[t-1], ts.y[t-1], ts.x[t], ts.y[t], pal->trail);
+                new_trail_count++;
+            }
+
+            // Sweep-angle fade
+            float ac_angle = atan2f((float)(px - RADAR_CX), (float)(RADAR_CY - py)) * 180.0f / M_PI;
+            if (ac_angle < 0) ac_angle += 360.0f;
+            float behind = sweep_angle - ac_angle;
+            if (behind < 0) behind += 360.0f;
+
+            uint16_t fade_color;
+			/*
+            if (a.is_emergency)
+                fade_color = (behind < 60) ? pal->blip_emg : pal->fade_emg_dim;
+            else if (a.is_military)
+                fade_color = (behind < 60) ? pal->blip_mil : pal->fade_mil_dim;
+            else if (behind < 60) 
+                fade_color = pal->fade_bright;
+            else if (behind < 180) 
+                fade_color = pal->fade_med;
+            else
+				fade_color = pal->fade_bright;
 			*/
-			//if (b.has_label) tft.fillRect(b.x + 4, b.y - 12, 56, 18, pal->bg);
-			if (b.has_label) {
-				// 擦大一點，避免 callsign + 高度行殘影／半截
-				int lx = b.x + 4;
-				int ly = b.y - 14;
-				if (lx < 0) lx = 0;
-				if (ly < RADAR_Y) ly = RADAR_Y;
-				tft.fillRect(lx, ly, 72, 24, pal->bg);
+			if (a.is_emergency)
+                fade_color = (behind < 60) ? pal->blip_emg : pal->fade_emg_dim;
+            else if (a.is_military)
+                fade_color = (behind < 60) ? pal->blip_mil : pal->fade_mil_dim;
+            else if (behind < 60) {
+                //fade_color = pal->fade_bright;
 			}
-			
-		}
-
-		// Redraw static: rings + crosshair
-		for (int i = 1; i <= 3; i++) {
-			int r = RADAR_R * i / 3;
-			tft.drawCircle(RADAR_CX, RADAR_CY, r, pal->ring);
-		}
-		tft.drawLine(RADAR_CX - RADAR_R, RADAR_CY, RADAR_CX + RADAR_R, RADAR_CY, pal->grid);
-		tft.drawLine(RADAR_CX, RADAR_CY - RADAR_R, RADAR_CX, RADAR_CY + RADAR_R, pal->grid);
-
-		// Compass rose: N/S/E/W at ring edges
-		tft.setTextColor(pal->ring, pal->bg);
-		tft.setTextDatum(MC_DATUM);
-		tft.drawString("N", RADAR_CX, RADAR_CY - RADAR_R + 6, 1);
-		tft.drawString("S", RADAR_CX, RADAR_CY + RADAR_R - 6, 1);
-		tft.drawString("E", RADAR_CX + RADAR_R - 6, RADAR_CY, 1);
-		tft.drawString("W", RADAR_CX - RADAR_R + 6, RADAR_CY, 1);
-
-		// Sweep line
-		float rad = sweep_angle * M_PI / 180.0f;
-		int sx = RADAR_CX + (int)(RADAR_R * sinf(rad));
-		int sy = RADAR_CY - (int)(RADAR_R * cosf(rad));
-		tft.drawLine(RADAR_CX, RADAR_CY, sx, sy, pal->sweep);
-		prev_sweep_angle = sweep_angle;
-
-		// Home dot
-		tft.fillCircle(RADAR_CX, RADAR_CY, 2, pal->text);
-
-		// Aircraft
-		int new_blip_count = 0;
-		int new_trail_count = 0;
-		int labels_drawn = 0;          // ← 新增
-		const int MAX_LABELS = 6;     // ← 最多 12 個文字標籤，可改 8~15
-			
-		if (aircraft_list.lock(pdMS_TO_TICKS(50))) {
-			
-			for (int i = 0; i < aircraft_list.count && new_blip_count < MAX_AIRCRAFT; i++) {
-				Aircraft &a = aircraft_list.aircraft[i];
-
-				// Apply filter
-				if (!aircraft_passes_filter(a)) continue;
-
-				int px, py;
-				if (!latlon_to_radar(a.lat, a.lon, px, py)) continue;
-
-				int dx = px - RADAR_CX;
-				int dy = py - RADAR_CY;
-				if (dx * dx + dy * dy > RADAR_R * RADAR_R) continue;
-
-				uint8_t opacity = compute_aircraft_opacity(a.stale_since, millis());
-				if (opacity == 0) continue;
-
-				// Trail（設定裡可關閉，省繪圖）
-				if (g_config.trails_enabled && a.trail_count > 1 && new_trail_count < MAX_AIRCRAFT) {
-					TrailState &ts = prev_trails[new_trail_count];
-					ts.count = 0;
-					for (int t = 0; t < a.trail_count && ts.count < TRAIL_LENGTH; t++) {
-						int tx, ty;
-						if (latlon_to_radar(a.trail[t].lat, a.trail[t].lon, tx, ty)) {
-							ts.x[ts.count] = tx;
-							ts.y[ts.count] = ty;
-							ts.count++;
-						}
-					}
-					for (int t = 1; t < ts.count; t++)
-						tft.drawLine(ts.x[t-1], ts.y[t-1], ts.x[t], ts.y[t], pal->trail);
-					new_trail_count++;
-				}
-
-				/* 
-				// 拿掉「依 sweep 變暗」的顏色邏輯 
-				// Sweep-angle fade
-				float ac_angle = atan2f((float)(px - RADAR_CX), (float)(RADAR_CY - py)) * 180.0f / M_PI;
-				if (ac_angle < 0) ac_angle += 360.0f;
-				float behind = sweep_angle - ac_angle;
-				if (behind < 0) behind += 360.0f;
-				*/
-				
-				
-				uint16_t fade_color;
-				/*
-				if (a.is_emergency)
-					fade_color = (behind < 60) ? pal->blip_emg : pal->fade_emg_dim;
-				else if (a.is_military)
-					fade_color = (behind < 60) ? pal->blip_mil : pal->fade_mil_dim;
-				else if (behind < 60) 
-					fade_color = pal->fade_bright;
-				else if (behind < 180) 
-					fade_color = pal->fade_med;
-				else
-					fade_color = pal->fade_bright;
-				*/
-				if (a.is_emergency)
-					fade_color = pal->blip_emg;
-				else if (a.is_military)
-					fade_color = pal->blip_mil;
-				else
-					fade_color = pal->blip;   //pal->fade_bright也可,一樣亮
-
-
-				int blip_r = (a.is_military || a.is_emergency) ? 3 : 2;
-				tft.fillCircle(px, py, blip_r, fade_color);
-
-				BlipState &b = prev_blips[new_blip_count];
-				b.x = px; b.y = py; b.r = blip_r;
-				b.has_heading = false; b.has_label = false;
-
-				// Heading line
-				if (a.heading > 0 && !a.on_ground) {
-					float hrad = a.heading * M_PI / 180.0f;
-					int hx = px + (int)(8 * sinf(hrad));
-					int hy = py - (int)(8 * cosf(hrad));
-					tft.drawLine(px, py, hx, hy, fade_color);
-					b.has_heading = true; b.hx = hx; b.hy = hy;
-				}
-
-			
-				// Labels：只顯示剛被 sweep 掃到、且總數有上限，減少重疊與半截字
-				b.has_label = false;
-				if (labels_drawn < MAX_LABELS) {  //if (behind < 90 && labels_drawn < MAX_LABELS) {
-					// 邊界檢查：太貼邊就不畫字，避免 half-cut
-					//    if (px > 8 && px < LCD_H_RES - 70 && py > RADAR_Y + 14 && py < LCD_V_RES - 14) {
-						tft.setTextColor(fade_color, pal->bg);
-						tft.setTextDatum(BL_DATUM);
-						if (a.callsign[0]) {
-							// 最多 7 字，避免過長
-							char cs[8];
-							strlcpy(cs, a.callsign, sizeof(cs));
-							tft.drawString(cs, px + 4, py - 2, 1);
-						}
-						//if (behind < 50) {
-							char info[16];
-							if (a.altitude > 0)
-								snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
-							else
-								info[0] = '\0';
-							if (info[0]) {
-								tft.setTextDatum(TL_DATUM);
-								tft.drawString(info, px + 4, py + 2, 1);
-							}
-						//}
-						b.has_label = true;
-						labels_drawn++;
-					//     }
-				}
-				// old code:
-				/* 
-				if (behind < 180) {
-					tft.setTextColor(fade_color, pal->bg);
-					tft.setTextDatum(BL_DATUM);
-					if (a.callsign[0])
-						tft.drawString(a.callsign, px + 4, py - 2, 1);
-					if (behind < 60) {
-						char info[16];
-						if (a.altitude > 0)
-							snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
-						else if (a.on_ground)
-							snprintf(info, sizeof(info), "GND %dk", a.speed);
-						else
-							info[0] = '\0';
-						if (info[0]) {
-							tft.setTextDatum(TL_DATUM);
-							tft.drawString(info, px + 4, py + 2, 1);
-						}
-					}
-					b.has_label = true;
-				}
-				*/		
-
-				new_blip_count++;
+            else if (behind < 180) {
+                //fade_color = pal->fade_med;
 			}
-			aircraft_list.unlock();
-		}
-		prev_blip_count = new_blip_count;
-		prev_trail_count = new_trail_count;
+            else {
+                // fade_color = pal->fade_dim;
+				fade_color = pal->fade_bright;
+			}
 
-		// Range labels
-		tft.setTextColor(pal->ring, pal->bg);
-		tft.setTextDatum(TC_DATUM);
-		for (int i = 1; i <= 3; i++) {
-			int r = RADAR_R * i / 3;
-			char buf[8];
-			snprintf(buf, sizeof(buf), "%d", (int)(RANGES[range_idx] * i / 3));
-			tft.drawString(buf, RADAR_CX + 2, RADAR_CY - r + 2, 1);
-		}
+
+            int blip_r = (a.is_military || a.is_emergency) ? 3 : 2;
+            tft.fillCircle(px, py, blip_r, fade_color);
+
+            BlipState &b = prev_blips[new_blip_count];
+            b.x = px; b.y = py; b.r = blip_r;
+            b.has_heading = false; b.has_label = false;
+
+            // Heading line
+            if (a.heading > 0 && !a.on_ground) {
+                float hrad = a.heading * M_PI / 180.0f;
+                int hx = px + (int)(8 * sinf(hrad));
+                int hy = py - (int)(8 * cosf(hrad));
+                tft.drawLine(px, py, hx, hy, fade_color);
+                b.has_heading = true; b.hx = hx; b.hy = hy;
+            }
+
 		
-		tft.endWrite(); //add: 結束批次 SPI 寫入
-	}
-    
+			// Labels：只顯示剛被 sweep 掃到、且總數有上限，減少重疊與半截字
+            b.has_label = false;
+			if (behind < 90 && labels_drawn < MAX_LABELS) {
+                // 邊界檢查：太貼邊就不畫字，避免 half-cut
+                if (px > 8 && px < LCD_H_RES - 70 && py > RADAR_Y + 14 && py < LCD_V_RES - 14) {
+                    tft.setTextColor(fade_color, pal->bg);
+                    tft.setTextDatum(BL_DATUM);
+                    if (a.callsign[0]) {
+                        // 最多 7 字，避免過長
+                        char cs[8];
+                        strlcpy(cs, a.callsign, sizeof(cs));
+                        tft.drawString(cs, px + 4, py - 2, 1);
+                    }
+					if (behind < 50) {
+                        char info[16];
+                        if (a.altitude > 0)
+                            snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
+                        else
+                            info[0] = '\0';
+                        if (info[0]) {
+                            tft.setTextDatum(TL_DATUM);
+                            tft.drawString(info, px + 4, py + 2, 1);
+                        }
+                    }
+                    b.has_label = true;
+                    labels_drawn++;
+                }
+            }
+			// old code:
+			/* 
+            if (behind < 180) {
+                tft.setTextColor(fade_color, pal->bg);
+                tft.setTextDatum(BL_DATUM);
+                if (a.callsign[0])
+                    tft.drawString(a.callsign, px + 4, py - 2, 1);
+				if (behind < 60) {
+                    char info[16];
+                    if (a.altitude > 0)
+                        snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
+                    else if (a.on_ground)
+                        snprintf(info, sizeof(info), "GND %dk", a.speed);
+                    else
+                        info[0] = '\0';
+                    if (info[0]) {
+                        tft.setTextDatum(TL_DATUM);
+                        tft.drawString(info, px + 4, py + 2, 1);
+                    }
+                }
+                b.has_label = true;
+            }
+			*/		
+
+            new_blip_count++;
+        }
+        aircraft_list.unlock();
+    }
+    prev_blip_count = new_blip_count;
+    prev_trail_count = new_trail_count;
+
+    // Range labels
+    tft.setTextColor(pal->ring, pal->bg);
+    tft.setTextDatum(TC_DATUM);
+    for (int i = 1; i <= 3; i++) {
+        int r = RADAR_R * i / 3;
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", (int)(RANGES[range_idx] * i / 3));
+        tft.drawString(buf, RADAR_CX + 2, RADAR_CY - r + 2, 1);
+    }
 }
 
 // ---- Arrivals board ----
@@ -1591,8 +1581,7 @@ void loop() {
     auto_cycle();
 
     // Redraw at ~15fps
-    // if (now - last_draw >= 66) { //deault
-	if (now - last_draw >= 66) { //120(~8fps)/200(~5fps)
+    if (now - last_draw >= 66) {
         last_draw = now;
 
         if (current_view == VIEW_LOADING) {
