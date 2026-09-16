@@ -110,7 +110,7 @@ static const ColorPalette *pal = &PALETTE_GREEN;
 // Range options (nm)
 static const float RANGES[] = {150, 100, 50, 20, 5};
 static const int NUM_RANGES = 5;
-static int range_idx = 3;  // 預設 50nm（對應 RANGES[2]）
+static int range_idx = 3;  //改20. default 50nm(對應 RANGES[2])
 
 // ---- View state ----
 
@@ -703,29 +703,29 @@ static void draw_radar() {
 					new_trail_count++;
 				}
 
-				 
-
-				
-				
-				
-				
-				
-				
+				/* 
+				// 拿掉「依 sweep 變暗」的顏色邏輯 
+				// Sweep-angle fade
+				float ac_angle = atan2f((float)(px - RADAR_CX), (float)(RADAR_CY - py)) * 180.0f / M_PI;
+				if (ac_angle < 0) ac_angle += 360.0f;
+				float behind = sweep_angle - ac_angle;
+				if (behind < 0) behind += 360.0f;
+				*/
 				
 				
 				uint16_t fade_color;
-				
-
-				
-				
-				
-				
-				
-				
-				
-				
-				
-				
+				/*
+				if (a.is_emergency)
+					fade_color = (behind < 60) ? pal->blip_emg : pal->fade_emg_dim;
+				else if (a.is_military)
+					fade_color = (behind < 60) ? pal->blip_mil : pal->fade_mil_dim;
+				else if (behind < 60) 
+					fade_color = pal->fade_bright;
+				else if (behind < 180) 
+					fade_color = pal->fade_med;
+				else
+					fade_color = pal->fade_bright;
+				*/
 				if (a.is_emergency)
 					fade_color = pal->blip_emg;
 				else if (a.is_military)
@@ -1591,7 +1591,7 @@ void loop() {
     auto_cycle();
 
     // Redraw at ~15fps
-    // if (now - last_draw >= 66) { //deault
+    // if (now - last_draw >= 66) { //default 66
 	if (now - last_draw >= 66) { //120(~8fps)/200(~5fps)
         last_draw = now;
 
