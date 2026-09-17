@@ -17,6 +17,7 @@
 #include "data/http_mutex.h"
 #include "data/enrichment.h"
 #include "ui/filters.h"
+#include "ui/hk_map.h"
 
 // Touch on separate VSPI bus
 #define XPT2046_IRQ   36
@@ -54,6 +55,7 @@ struct ColorPalette {
     uint16_t fade_dim;
     uint16_t fade_mil_dim;
     uint16_t fade_emg_dim;
+	uint16_t map_line;   // 地圖海岸線顏色
 };
 
 static const ColorPalette PALETTE_GREEN = {
@@ -74,6 +76,7 @@ static const ColorPalette PALETTE_GREEN = {
     c565(0, 70, 0),      // fade_dim
     c565(120, 30, 30),   // fade_mil_dim
     c565(120, 90, 0),    // fade_emg_dim
+	c565(0, 90, 40),     // map_line (暗綠，不會搶飛機)
 };
 
 static const ColorPalette PALETTE_NIGHT = {
@@ -94,6 +97,7 @@ static const ColorPalette PALETTE_NIGHT = {
     c565(70, 25, 0),     // fade_dim
     c565(120, 30, 30),   // fade_mil_dim
     c565(120, 20, 20),   // fade_emg_dim
+	c565(80, 40, 10),    // map_line (暗琥珀)
 };
 
 static const ColorPalette *pal = &PALETTE_GREEN;
@@ -627,15 +631,27 @@ static void draw_radar() {
 			//if (b.has_label) tft.fillRect(b.x + 4, b.y - 12, 56, 18, pal->bg);
 			if (b.has_label) {
 				// 擦大一點，避免 callsign + 高度行殘影／半截
+				/*
+				// -> for drawstring(): size=1
 				int lx = b.x + 4;
 				int ly = b.y - 14;
 				if (lx < 0) lx = 0;
 				if (ly < RADAR_Y) ly = RADAR_Y;
 				tft.fillRect(lx, ly, 72, 24, pal->bg);
+				*/
+				// -> for drawstring(): size=2
+				int lx = b.x + 4;				
+				int ly = b.y - 18; // Adjusted higher to cover larger 16px Font 2 text offset
+				if (lx < 0) lx = 0;
+				if (ly < RADAR_Y) ly = RADAR_Y;
+				tft.fillRect(lx, ly, 110, 38, pal->bg);  // Font 2 erasure bounds: 110px width, 38px height (covers 2 lines)
 			}
 			
 		}
 
+        // Draw HK map 
+		//hk_map_draw(tft, HOME_LAT, HOME_LON, RANGES[range_idx], RADAR_CX, RADAR_CY, RADAR_R, pal->map_line); //可試 pal->grid
+		
 		// Redraw static: rings + crosshair
 		for (int i = 1; i <= 3; i++) {
 			int r = RADAR_R * i / 3;
@@ -762,12 +778,15 @@ static void draw_radar() {
 							// 最多 7 字，避免過長
 							char cs[8];
 							strlcpy(cs, a.callsign, sizeof(cs));
-							tft.drawString(cs, px + 4, py - 2, 1);
+							
+							// 原本call sign's text size是1, 改大正2
+							tft.drawString(cs, px + 4, py - 2, 2); //tft.drawString(cs, px + 4, py - 2, 1);
 						}
 						//if (behind < 50) {
 							char info[16];
 							if (a.altitude > 0)
-								snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
+								//原本高&速度顯示: 102 292k. 省位:不顯示"k"
+								snprintf(info, sizeof(info), "%d %d", a.altitude / 100, a.speed); //snprintf(info, sizeof(info), "%d %dk", a.altitude / 100, a.speed);
 							else
 								info[0] = '\0';
 							if (info[0]) {
