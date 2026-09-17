@@ -330,8 +330,16 @@ static int arrivals_list_y = 0;
 // ---- Touch handlers per view ----
 
 // Touch zones: 45% left, 10% center, 45% right
-#define TOUCH_LEFT_MAX  (LCD_H_RES * 9 / 20)  // 144
-#define TOUCH_RIGHT_MIN (LCD_H_RES * 11 / 20) // 176
+//
+// 原本：左45% / 中10% / 右45%
+//#define TOUCH_LEFT_MAX  (LCD_H_RES * 9 / 20)  // 144
+//#define TOUCH_RIGHT_MIN (LCD_H_RES * 11 / 20) // 176
+//
+//把「中間區」變寬
+// 改成：左40% / 中20% / 右40%
+#define TOUCH_LEFT_MAX  (LCD_H_RES * 2 / 5)   // 128
+#define TOUCH_RIGHT_MIN (LCD_H_RES * 3 / 5)   // 192
+
 
 static void handle_touch_radar(int tx) {
     if (tx < TOUCH_LEFT_MAX) {
@@ -650,7 +658,7 @@ static void draw_radar() {
 		}
 
         // Draw HK map 
-		//hk_map_draw(tft, HOME_LAT, HOME_LON, RANGES[range_idx], RADAR_CX, RADAR_CY, RADAR_R, pal->map_line); //可試 pal->grid
+		hk_map_draw(tft, HOME_LAT, HOME_LON, RANGES[range_idx], RADAR_CX, RADAR_CY, RADAR_R, pal->map_line); //可試 pal->grid
 		
 		// Redraw static: rings + crosshair
 		for (int i = 1; i <= 3; i++) {
@@ -682,7 +690,7 @@ static void draw_radar() {
 		int new_blip_count = 0;
 		int new_trail_count = 0;
 		int labels_drawn = 0;          // ← 新增
-		const int MAX_LABELS = 6;     // ← 最多 12 個文字標籤，可改 8~15
+		const int MAX_LABELS = 8;     // ← 最多 12 個文字標籤，可改 8~15
 			
 		if (aircraft_list.lock(pdMS_TO_TICKS(50))) {
 			
@@ -779,7 +787,7 @@ static void draw_radar() {
 							char cs[8];
 							strlcpy(cs, a.callsign, sizeof(cs));
 							
-							// 原本call sign's text size是1, 改大正2
+							// 原本call sign's text size是1, 改大至2
 							tft.drawString(cs, px + 4, py - 2, 2); //tft.drawString(cs, px + 4, py - 2, 1);
 						}
 						//if (behind < 50) {
