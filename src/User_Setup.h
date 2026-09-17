@@ -45,9 +45,11 @@
 // the opposite of what most 2.8" CYDs are documented to want. Panel lots vary;
 // trust the test, not the internet. If you change this, also update
 // CYD_TFT_INVERT in config/board.h so the two stay in step (s01 checks).
-#define TFT_INVERSION_ON
-//#define TFT_INVERSION_OFF
-#define TFT_RGB_ORDER TFT_BGR
+//#define TFT_INVERSION_ON
+#define TFT_INVERSION_OFF
+
+//#define TFT_RGB_ORDER TFT_BGR
+#define TFT_RGB_ORDER TFT_RGB
 
 // ---- SPI pins -- must match config/board.h ---------------------------------
 #define TFT_MOSI 13
