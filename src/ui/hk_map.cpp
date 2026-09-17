@@ -54,11 +54,13 @@ static void draw_path(
         bool in1 = project_if_in_range(pts[i],     home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x1, y1);
 
         // Beginner-friendly：只畫「兩端都入 range」嘅線段（避免畫到雷達圈外）
-		/*
         if (in0 && in1) {
             tft.drawLine(x0, y0, x1, y1, color);
-        }*/
-		tft.drawLine(x0, y0, x1, y1, color);
+        }
+		
+		// (可選) 防 watchdog / 讓系統喘氣：每 32 條線讓出一下 CPU
+		if ((i & 31) == 0) yield();
+		 
     }
 }
 
