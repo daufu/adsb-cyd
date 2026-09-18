@@ -501,6 +501,10 @@ lantau + vhhh:
 SHENZHEN_COAST
         "coordinates": [
           [
+            113.4641106,
+            23.0884399
+          ],
+          [
             113.7373865,
             22.734895
           ],
@@ -535,6 +539,10 @@ SHENZHEN_COAST
 ZHUHAI_MACAU[] :
 
       "coordinates": [
+          [
+            113.4641106,
+            23.0884399
+          ],
           [
             113.5910305,
             22.8112516
