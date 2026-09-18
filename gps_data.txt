@@ -1,4 +1,4 @@
-//from geojson:
+ //from geojson:
 // ---NT and Kowloon---
 nt + kln: 
         "coordinates": [
@@ -503,10 +503,6 @@ SHENZHEN_COAST
           [
             113.4641106,
             23.0884399
-          ],
-          [
-            113.7373865,
-            22.734895
           ],
           [
             113.8387505,
