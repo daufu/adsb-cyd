@@ -82,10 +82,10 @@ static const ColorPalette PALETTE_GREEN = {
 static const ColorPalette PALETTE_NIGHT = {
     TFT_BLACK,           // bg
     c565(40, 10, 0),     // grid
-    c565(60, 15, 0),     // ring
-    c565(120, 40, 0),    // sweep
+    c565(180, 70, 0),	 //c565(60, 15, 0),     // ring
+	c565(180, 70, 0),	 //c565(120, 40, 0),    // sweep
     c565(200, 80, 0),    // text
-    c565(80, 30, 0),     // trail
+    c565(219, 132, 77),  //c565(80, 30, 0),     // trail
     c565(255, 140, 0),   // blip (amber)
     c565(255, 60, 60),   // blip_mil
     c565(255, 50, 50),   // blip_emg (red)
@@ -97,7 +97,7 @@ static const ColorPalette PALETTE_NIGHT = {
     c565(70, 25, 0),     // fade_dim
     c565(120, 30, 30),   // fade_mil_dim
     c565(120, 20, 20),   // fade_emg_dim
-	c565(80, 40, 10),    // map_line (暗琥珀)
+	c565(180, 46, 226),  // c565(80, 40, 10),    // map_line (暗琥珀)
 };
 
 static const ColorPalette *pal = &PALETTE_GREEN;
@@ -278,12 +278,24 @@ static bool getTouchPoint(int &tx, int &ty) {
 }
 
 // ---- Brightness ----
-
+/*
+常態亮度50%-70%,控制發熱量、穩定電流、防螢幕高溫黃化.
+100%光度: 255; 70%光度: 255*0.7=178; 60%光度: 255*0.6=153; 
+55%光度: 255*0.55=140; 50%光度: 255*0.50=128
+*/
 static void apply_brightness() {
+/*
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
     ledcWrite(TFT_BL, g_config.brightness);
 #else
     ledcWrite(0, g_config.brightness);
+#endif
+*/
+// 自己改: 提高螢幕life, 設亮度值不超150
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+	ledcWrite(TFT_BL, 150);
+#else
+    ledcWrite(0, 150);
 #endif
 }
 
