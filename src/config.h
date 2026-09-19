@@ -5,7 +5,7 @@
 #define WIFI_PASS "123456789" 
 
 // Home location
-// 香港 22.3193,114.1694 ; 22.3780,114.1130 ; tai mo shan  , 114.1120   
+// 香港 22.3193,114.1694 ; 22.3780,114.1130 
 #define HOME_LAT 22.4085 // tai mo shan緯度
 #define HOME_LON 114.1120 // tai mo shan經度
 
