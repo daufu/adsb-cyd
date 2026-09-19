@@ -215,6 +215,14 @@ static void parse_aircraft_json(JsonDocument &doc) {
         parsed_count++;
     }
 
+	/*
+	Every time fresh flight data is downloaded, organize the planes, 
+	update existing ones, add new ones, clean up planes that've left the radar range.
+	*/
+	//
+	// 自己ADD. 
+	// Step 1: Sorting the Planes by Distance:
+	// sorts all parsed aircraft by how close they're to u, putting the closest ones first.
 	// 依距離由近到遠排序（簡單 insertion sort，飛機數少夠用）
     for (int i = 1; i < parsed_count; i++) {
         ParsedEntry tmp = parsed[i];
@@ -233,12 +241,19 @@ static void parse_aircraft_json(JsonDocument &doc) {
     uint32_t now = millis();
     bool seen[MAX_AIRCRAFT] = {};
 
+	//
+	// Step 2: Updating or Adding Planes to Your List:
+	// checks every incoming plane against active list using its unique ID (hex code).
+	// - If the plane is already there: updates its position, speed, alt (apply_parsed), marks it as seen.
+	// - If it's a new plane: If <= maximum limit (MAX_AIRCRAFT), it adds the plane to active list.
     for (int p = 0; p < parsed_count; p++) {
         int idx = find_aircraft(parsed[p].hex);
         if (idx >= 0) {
+			// 已在追蹤清單中 -> 更新資料
             apply_parsed(_aircraft_list->aircraft[idx], parsed[p], false);
             seen[idx] = true;
         } else if (_aircraft_list->count < MAX_AIRCRAFT) {
+			// 新飛機 -> 加進清單
             int new_idx = _aircraft_list->count;
             _aircraft_list->aircraft[new_idx].clear();
             apply_parsed(_aircraft_list->aircraft[new_idx], parsed[p], true);
@@ -246,7 +261,13 @@ static void parse_aircraft_json(JsonDocument &doc) {
             seen[new_idx] = true;
         }
     }
-
+	
+	//
+	// Step 3: Clean Up "Ghost" Planes (Disappearing Aircraft):
+	// 有時 update might miss a plane (weak wifi/data drops). Instead of instantly deleting the plane from screen, 
+	// the code gives missing planes a grace period (GHOST_TIMEOUT_MS).
+	// If a plane isn't seen in latest update, it notes the time it disappeared. 
+	// If it stays missing for too long, it finally removes it from the list (_aircraft_list->count = write).
     int write = 0;
     for (int i = 0; i < _aircraft_list->count; i++) {
         Aircraft &a = _aircraft_list->aircraft[i];
