@@ -5,8 +5,9 @@
 #define WIFI_PASS "123456789" 
 
 // Home location
-#define HOME_LAT 22.3193   // 香港緯度
-#define HOME_LON 114.1694  // 香港經度
+// 香港 22.3193,114.1694 ; 22.3780,114.1130 ; tai mo shan  , 114.1120   
+#define HOME_LAT 22.4085 // tai mo shan緯度
+#define HOME_LON 114.1120 // tai mo shan經度
 
 // ADS-B settings — reduced for CYD (no PSRAM, 320KB DRAM)
 /*
