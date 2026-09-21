@@ -2,7 +2,7 @@
 
 // WiFi credentials
 #define WIFI_SSID "hellowifi"  
-#define WIFI_PASS "123456789"  
+#define WIFI_PASS "123456789"
 
 // Home location
 #define HOME_LAT 30.6905
