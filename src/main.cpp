@@ -610,6 +610,11 @@ static void draw_radar() {
     bool redraw_blips = (now - last_blip_draw > 200);  // 每 100ms 才重畫飛機一次（可改 50~200）
     if (redraw_blips) last_blip_draw = now;
 	
+	/*   
+	減cpu loading: 
+	於void loop()用if (now - last_draw >= 66)限制畫面更新 15fps
+	再加下面code, 更進一步限制畫飛機更新 5fps
+	*/
 	if (redraw_blips) { 	
 		tft.startWrite(); //<-add: 開始批次 SPI 寫入  
 		
