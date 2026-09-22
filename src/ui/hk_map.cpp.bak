@@ -1,17 +1,6 @@
 #include "hk_map.h"
 #include <math.h>
 
-/*
-map有2種顯示style: 
-Style 1.  [原本] map不畫出radar circle. 
-Style 2.  [自己add] map畫出radar circle外、用滿status bar以下整個螢幕區域(320x220).
-
-流程:
-main.cpp: draw_radar() -> hk_map.cpp: hk_map_draw() -> 
-1. draw_path() 用 project_if_in_range() 確認是否超出radar圈, 再判斷: 不讓畫到雷達圈外
-2. draw_path() 用 project_to_pixel() 確認是否超出範圍, 再判斷: 不讓線碰到status bar 
-
-*/
 // === 幾何/投影說明（同 main.cpp 同一種近似）===
 // nm_north = (lat - home_lat) * 60
 // nm_east  = (lon - home_lon) * 60 * cos(home_lat)
@@ -23,12 +12,6 @@ struct GeoPt {
     float lon;
 };
 
-
-/* 
-Style 1.  [原本] map不畫出radar circle. 
--計算 nm 距離後，if (dist2 > r2) return false; → 超出 range_nm 的點不投影。
--Uncomment本function: 若用Style 1. 
-*/
 static inline bool project_if_in_range(
     const GeoPt &p,
     float home_lat, float home_lon,
@@ -53,46 +36,6 @@ static inline bool project_if_in_range(
     return true;
 }
 
-
-/* 
-Style 2.  [自己add] map畫出radar circle外、用滿status bar以下整個螢幕區域(320x220).
--計算 nm 距離後，if (dist2 > r2) return false; → 超出 range_nm 的點不投影.
--map會填滿 radar circle外的 corners(左右上下), 但不畫進 y=0~19 的status bar.
--Uncomment本function: 若用Style 2.
-*/
-static inline bool project_to_pixel( 
-    const GeoPt &p,
-    float home_lat, float home_lon,
-    float cos_lat,
-    float range_nm,  //保留給 soft clip 用      
-    float scale,
-    int cx, int cy,
-    int &x, int &y
-) {
-    float dlat = p.lat - home_lat;
-    float dlon = p.lon - home_lon;
-
-    float nm_n = dlat * 60.0f;
-    float nm_e = dlon * 60.0f * cos_lat;
-
-    // 現允許畫出radar circle外, 用盡status bar下整screen
-    // Soft 保護: 太遠(>2.5x range)就不畫, 避免極端座標 + 省CPU(這些點本來就很少)
-    float dist2 = nm_n * nm_n + nm_e * nm_e;
-    float max_r = range_nm * 2.5f;   //可調2.0-3.0, 越大外圍越多(更多外圍海岸線出現).
-    if (dist2 > max_r * max_r) return false;
-
-    x = cx + (int)(nm_e * scale);
-    y = cy - (int)(nm_n * scale);
-    return true;
-}
-
-
-
-/*
-if (in0 && in1) 才drawLine:
-Style 1. 避免畫到雷達圈外
-Style 2. map畫出radar circle外
-*/
 static void draw_path(
     TFT_eSPI &tft,
     const GeoPt *pts, int n,
@@ -105,67 +48,20 @@ static void draw_path(
 ) {
     if (!pts || n < 2) return;
 
-	// 
-	// Style 1: [原本] map不畫出radar circle. 
     for (int i = 1; i < n; i++) {
         int x0, y0, x1, y1;
         bool in0 = project_if_in_range(pts[i - 1], home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x0, y0);
         bool in1 = project_if_in_range(pts[i],     home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x1, y1);
 
-		// Beginner-friendly: 只畫「兩端都入 range」嘅線段(避免畫到雷達圈外)
+        // Beginner-friendly：只畫「兩端都入 range」嘅線段（避免畫到雷達圈外）
         if (in0 && in1) {
             tft.drawLine(x0, y0, x1, y1, color);
-        }
-		
-		// (可選)防 watchdog / 讓系統喘氣: 每 32 條線讓出一下 CPU
-		if ((i & 31) == 0) yield();
-		 
-    }
-	
-	/* 	*/
-	
-	//
-	// Style 2: map畫出radar circle外
-    for (int i = 1; i < n; i++) {
-        int x0, y0, x1, y1;
-        int x0, y0, x1, y1;
-        bool in0 = project_to_pixel(pts[i - 1], home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x0, y0);  // 若沒改名就繼續用 project_if_in_range
-        bool in1 = project_to_pixel(pts[i],     home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x1, y1);
-
-		//
-        // 允許畫出 circle 外. 但不讓線碰到 status bar (y < 20). 同時rough screen檢查, 免極端座標.
-		// if (in0 && in1): 
-		// - 線段的2點都 within 2.5 倍的幾何緩衝區, 條件才成立;
-		// - 線段其中1點不在 2.5 倍的幾何緩衝區, 條件不成立.
-		，而另一個端點落在之外（in1 = false），這整條線段（line a）就會因為條件不成立而完全不被繪製。
-        if (in0 && in1) {
-
-			/*			
-			// 不超越頂status bar (STATUS_H=20), 也不要畫太離譜
-			Even within 2.5倍的幾何緩衝區, 仍有機畫到status bar裡面, so加下面condition:
-			1. y0 >= 20 && y1 >= 20(最重要): 當線段的2端點 Y axis都= or <20, 才畫線.
-			完全切斷任何畫入頂部 Status Bar (Y < 20)
-			2. y0 < 250 && y1 < 250 (螢幕bottom防護): 螢幕高只有240 px (Y : 0~239). 此處放寬至250px緩衝.
-			免draw出螢幕下方過遠的線段.
-			3. x0 > -50 && x0 < 370 && x1 > -50 && x1 < 370 (左右邊界與防溢位)
-			螢幕寬320 px (X: 0 ~ 319). 此處:左放寬到 -50, 右放寬到 370.
-			目的: TFT_eSPI具裁剪Clipping功能, 如丟的axis val太離譜(如X axis 達數千, 極大負數), 
-			可能繪圖庫整數溢位Integer Overflow, 令螢幕出現奇怪穿過全螢幕斜線(飛線). 
-			這行是安全網, 將過度極端的座標filter.
-			*/
-            if (y0 >= 20 && y1 >= 20 && 
-                y0 < 250 && y1 < 250 && 
-                x0 > -50 && x0 < 370 && x1 > -50 && x1 < 370) {
-                tft.drawLine(x0, y0, x1, y1, color);
-            }
         }
 		
 		// (可選) 防 watchdog / 讓系統喘氣：每 32 條線讓出一下 CPU
 		if ((i & 31) == 0) yield();
 		 
-    }	
-
-	
+    }
 }
 
 // =====================================================
