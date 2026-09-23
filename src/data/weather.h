@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 // 強度圖解析度（奇數較好，中心對齊）。128 → 16KB
-#define WX_N           128
+#define WX_N           64 //改64. 原128
 #define WX_UPDATE_MS   (5UL * 60UL * 1000UL)  // 5 分鐘
 #define WX_MIN_INTENSITY  8   // 低於此當無雨，不畫
 
