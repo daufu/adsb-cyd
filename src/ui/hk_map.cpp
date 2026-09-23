@@ -209,7 +209,7 @@ static void draw_path(
 	
 	//
 	// Style 2: map畫出radar circle外
-	// -Uncomment本function: 若用Style 1.
+	// -Uncomment本function: 若用Style 2.
     for (int i = 1; i < n; i++) {
         int x0, y0, x1, y1;
         bool in0 = project_to_pixel(pts[i - 1], home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x0, y0);  // 若沒改名就繼續用 project_if_in_range
