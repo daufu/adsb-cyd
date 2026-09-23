@@ -3,14 +3,13 @@
 
 /*
 map有2種顯示style: 
-Style 1.  [原本] map inside radar circle. 
-Style 2.  [自己add] map畫出radar circle外、用滿status bar以下整個螢幕區域(320x220).
+Style 1 [原本]. map inside radar circle. 
+Style 2 [自加]. map畫出radar circle外、用滿status bar以下整個螢幕區域(320x220).
 
 流程:
 main.cpp: draw_radar() -> hk_map.cpp: hk_map_draw() -> 
 1. draw_path() 用 project_if_in_range() 確認是否超出radar圈, 再判斷: 不讓畫到雷達圈外
 2. draw_path() 用 project_to_pixel() 確認是否超出範圍, 再判斷: 不讓線碰到status bar 
-
 */
 // === 幾何/投影說明（同 main.cpp 同一種近似）===
 // nm_north = (lat - home_lat) * 60
@@ -25,10 +24,11 @@ struct GeoPt {
 
 
 /* 
-Style 1.  [原本] map inside radar circle. 
+Style 1. map inside radar circle. 
 -計算 nm 距離後，if (dist2 > r2) return false; → 超出 range_nm 的點不投影。
 -Uncomment本function: 若用Style 1. 
 */
+/*
 static inline bool project_if_in_range(
     const GeoPt &p,
     float home_lat, float home_lon,
@@ -44,6 +44,9 @@ static inline bool project_if_in_range(
     float nm_n = dlat * 60.0f;
     float nm_e = dlon * 60.0f * cos_lat;
 
+	//
+	//project_to_pixel()版本: 允畫超過雷達圓圈外圍2.5倍遠的點
+	//此版本: 用r2=range_nm*range_nm, 直接用range_nm本身. 超雷達半徑,不准畫.
     float dist2 = nm_n * nm_n + nm_e * nm_e;
     float r2 = range_nm * range_nm;
     if (dist2 > r2) return false;
@@ -51,11 +54,11 @@ static inline bool project_if_in_range(
     x = cx + (int)(nm_e * scale);
     y = cy - (int)(nm_n * scale);
     return true;
-}
+}   */
 
 
 /* 
-Style 2.  [自己add] map畫出radar circle外、用滿status bar以下整個螢幕區域(320x220).
+Style 2. map畫出radar circle外
 -計算 nm 距離後，if (dist2 > r2) return false; → 超出 range_nm 的點不投影.
 -map會填滿radar圈外的corners(左右上下), 但不畫進y=0~19 的status bar.
 -Uncomment本function: 若用Style 2.
@@ -69,20 +72,19 @@ static inline bool project_to_pixel(
     int cx, int cy,
     int &x, int &y
 ) {
-	/*
-	算目標點在螢幕哪個像素點(x, y)
-	北 (North)
-			 ^
-			 |             * 目標點 (Target)
-			 |            / |
-			 |           /  |
-	  nm_n = |          /   | 
-		3浬  |         /    | 還有這段「斜直線」才是真正的距離！
-			 |        /     |
-			 |       /      |
-			 +------+-------+---> 東 (East)
-			Home  nm_e = 4浬
-	*/
+	// 	算目標點在螢幕哪個像素點(x, y)
+	//		北 (North)
+	//				^
+	//				|             * 目標點 (Target)
+	//				|            / |
+	//				|           /  |
+	//		nm_n =  |          /   | 
+	//			3浬 |         /    | 還有這段「斜直線」才是真正的距離！
+	// 				|        /     |
+	//			  / |       /      |
+	// 				+------+-------+---> 東 (East)
+	// 			Home  nm_e = 4浬
+	// 
 	// 用目標緯度/經度,減Home緯度/經度: 你緯度25度, 目標緯度26度，那dlat就是1 (代表差1度)
 	// lat 緯度線(橫線): 測南北位 ; lon 經度線(直線): 測東西位.
     float dlat = p.lat - home_lat;
@@ -94,76 +96,74 @@ static inline bool project_to_pixel(
     float nm_n = dlat * 60.0f;  
     float nm_e = dlon * 60.0f * cos_lat;
 
-	/*
-	- Trangle畢氏定理: 斜邊^2 = 底邊^2 + 高^2
-	北邊^2 = nm_n*nm_n = 3*3 = 9 ; 東邊^2 = nm_e * nm_e = 4*4 = 16 ; 
-	兩邊平方相加=9+16=25 (即斜邊^2 = 25) -> 就是dist2. Target真正直線距離: 25開方根 = 5
-	- CPU計開根號(sqrt)慢!
-	幹脆把dist2 = 25 (斜邊^2) 和 max_r^2(max_r * max_r), 直接比較大小:
-	25(斜邊^2) 跟 max_r^2比大小 & 5(25開方根) 跟 max_r 比大小, 效果完全一樣!
+	// 
+	// - Trangle畢氏定理: 斜邊^2 = 底邊^2 + 高^2
+	// 北邊^2 = nm_n*nm_n = 3*3 = 9 ; 東邊^2 = nm_e * nm_e = 4*4 = 16 ; 
+	// 兩邊平方相加=9+16=25 (即斜邊^2 = 25) -> 就是dist2. Target真正直線距離: 25開方根 = 5
+	// - CPU計開根號(sqrt)慢!
+	// 幹脆把dist2 = 25 (斜邊^2) 和 max_r^2(max_r * max_r), 直接比較大小:
+	// 25(斜邊^2) 跟 max_r^2比大小 & 5(25開方根) 跟 max_r 比大小, 效果完全一樣!
 
-	功能: 
-	允許畫出radar circle外, 用盡status bar下整screen
-	Soft 保護: 太遠(>2.5x range)就不畫, 避免極端座標 + 省CPU(這些點本來就很少). 
-	- 若目標離你太遠(超過雷達圈2.5倍緩衝區), 就不要浪費CPU算它. 直接回傳false->不畫.
-	*/
+	// 功能: 
+	// 允許畫出radar circle外, 用盡status bar下整screen
+	// Soft 保護: 太遠(>2.5x range)就不畫, 避免極端座標 + 省CPU(這些點本來就很少). 
+	// - 若目標離你太遠(超過雷達圈2.5倍緩衝區), 就不要浪費CPU算它. 直接回傳false->不畫.
     float dist2 = nm_n * nm_n + nm_e * nm_e;
     float max_r = range_nm * 2.5f;   //可調2.0-3.0, 越大外圍越多(更多外圍海岸線出現). 
     if (dist2 > max_r * max_r) return false;
 
-	/* 把海浬 變 螢幕像素Pixels:
-	1. cx & cy: 螢幕的正中心點(Center X, Center Y).
-	2. scale(縮放比例): 用來放大/縮小map. 假設比例是1浬 對應 10個像素，scale就是10.
-	3. why x用加，y用減(cy -)?  
-	- X軸(東西方向): 螢幕越右數字越大, 所以向東是加(+).
-	- Y軸(南北方向): 易混淆! 真實世界 緯度往北是"增加"(赤道0度, 北極6x度); 但螢幕上，座標的0點在最左上方，往下走數字反而變大.
-	e.g.
-	- 螢幕中心cx,cy=160,120 (mon 320x240); 放大scale=10 (1海浬 = 10個像素點)
-	x = 160 + (nm_e * 10) （向東加，向西減）
-	y = 120 - (nm_n * 10) （向北減，向南加）
-		電腦螢幕 (0,0 在左上角)
-		(0,0)  --------> X軸 (向右變大)
-		  |
-		  |  螢幕中心(160, 120)
-		  v 
-		 Y軸(向下變大. 注意: 跟真實世界相反)
-	
-	A. 真實世界: 在正東方 2 浬
-	nm_n=0, nm_e=2 (往東 2 浬)
-	x = 160 + (2 * 10) = 180
-	y = 120 - (0 * 10) = 120
-	結果: 180, 120 -> 螢幕中心往右移 20 像素	
-	B. 真實世界:在家西方 3 浬 (向西是負)
-	nm_n = 0, nm_e = -3 (往西 3 浬)
-	x = 160 + (-3 * 10) = 130
-	y = 120 - (0 * 10) = 120
-	結果: 130, 120 -> 螢幕中心往左移 30 像素
-	C. 真實世界: 在家北方 4 浬
-	nm_n = 4（往北 4 浬）, nm_e = 0
-	x = 160 + (0 * 10) = 160
-	y = 120 - (4 * 10) = 120 - 40 = 80 (因往上所以用減)
-	結果: 160, 80 -> 螢幕中心往上移 40 像素
-	D. 真實世界: 在家南方 2.5 浬 (向南是負)）
-	nm_n = -2.5, nm_e = 0
-	x = 160 + (0 * 10) = 160
-	y = 120 - (-2.5 * 10) = 120 - (-25) = 120 + 25 = 145 (負負得正, 變加)
-	結果像素: 160, 145 -> 螢幕中心往下移 25 像素
-	E. 東北 / 真實世界: 往東 3 浬, 北 2 浬
-	nm_n = 2, nm_e = 3
-	x = 160 + (3 * 10) = 190 (往右)
-	y = 120 - (2 * 10) = 100 (往上)
-	結果像素: 190, 100 -> 落在螢幕的右上角
-	F. 西北 / 真實世界: 往西 2 浬，北 3 浬
-	nm_n = 3（北）, nm_e = -2 (西是負)
-	x = 160 + (-2 * 10) = 140 (往左)
-	y = 120 - (3 * 10) = 90 (往上)
-	結果像素: 140, 90 -> 落在螢幕的左上角
-	G. 西南 / 真實世界: 往西 4 浬, 南 1 浬
-	nm_n = -1 (南是負), nm_e = -4 (西是負)
-	x = 160 + (-4 * 10) = 120 (往左)
-	y = 120 - (-1 * 10) = 120 + 10 = 130 (往下)
-	結果像素：(120, 130) -> 落在螢幕的左下角方向
-	*/
+	// 把海浬 變 螢幕像素Pixels:
+	// 1. cx & cy: 螢幕的正中心點(Center X, Center Y).
+	// 2. scale(縮放比例): 用來放大/縮小map. 假設比例是1浬 對應 10個像素，scale就是10.
+	// 3. why x用加，y用減(cy -)?  
+	// - X軸(東西方向): 螢幕越右數字越大, 所以向東是加(+).
+	// - Y軸(南北方向): 易混淆! 真實世界 緯度往北是"增加"(赤道0度, 北極6x度); 但螢幕上，座標的0點在最左上方，往下走數字反而變大.
+	// e.g.
+	// - 螢幕中心cx,cy=160,120 (mon 320x240); 放大scale=10 (1海浬 = 10個像素點)
+	// x = 160 + (nm_e * 10) （向東加，向西減）
+	// y = 120 - (nm_n * 10) （向北減，向南加）
+	// 		電腦螢幕 (0,0 在左上角)
+	// 		(0,0)  --------> X軸 (向右變大)
+	//			|
+	//			|  螢幕中心(160, 120)
+	// 			v 
+	// 		Y軸(向下變大. 注意: 跟真實世界相反)
+	//
+	// A. 真實世界: 在正東方 2 浬
+	// nm_n=0, nm_e=2 (往東 2 浬)
+	// x = 160 + (2 * 10) = 180
+	// y = 120 - (0 * 10) = 120
+	// 結果: 180, 120 -> 螢幕中心往右移 20 像素	
+	// B. 真實世界:在家西方 3 浬 (向西是負)
+	// nm_n = 0, nm_e = -3 (往西 3 浬)
+	// x = 160 + (-3 * 10) = 130
+	// y = 120 - (0 * 10) = 120
+	// 結果: 130, 120 -> 螢幕中心往左移 30 像素
+	// C. 真實世界: 在家北方 4 浬
+	// nm_n = 4（往北 4 浬）, nm_e = 0
+	// x = 160 + (0 * 10) = 160
+	// y = 120 - (4 * 10) = 120 - 40 = 80 (因往上所以用減)
+	// 結果: 160, 80 -> 螢幕中心往上移 40 像素
+	// D. 真實世界: 在家南方 2.5 浬 (向南是負)）
+	// nm_n = -2.5, nm_e = 0
+	// x = 160 + (0 * 10) = 160
+	// y = 120 - (-2.5 * 10) = 120 - (-25) = 120 + 25 = 145 (負負得正, 變加)
+	// 結果像素: 160, 145 -> 螢幕中心往下移 25 像素
+	// E. 東北 / 真實世界: 往東 3 浬, 北 2 浬
+	// nm_n = 2, nm_e = 3
+	// x = 160 + (3 * 10) = 190 (往右)
+	// y = 120 - (2 * 10) = 100 (往上)
+	// 結果像素: 190, 100 -> 落在螢幕的右上角
+	// F. 西北 / 真實世界: 往西 2 浬，北 3 浬
+	// nm_n = 3（北）, nm_e = -2 (西是負)
+	// x = 160 + (-2 * 10) = 140 (往左)
+	// y = 120 - (3 * 10) = 90 (往上)
+	// 結果像素: 140, 90 -> 落在螢幕的左上角
+	// G. 西南 / 真實世界: 往西 4 浬, 南 1 浬
+	// nm_n = -1 (南是負), nm_e = -4 (西是負)
+	// x = 160 + (-4 * 10) = 120 (往左)
+	// y = 120 - (-1 * 10) = 120 + 10 = 130 (往下)
+	// 結果像素：(120, 130) -> 落在螢幕的左下角方向
     x = cx + (int)(nm_e * scale);
     y = cy - (int)(nm_n * scale);
     return true;
@@ -190,6 +190,8 @@ static void draw_path(
 
 	// 
 	// Style 1: [原本] map inside radar circle. 
+	// -Uncomment本function: 若用Style 1.
+	/*
     for (int i = 1; i < n; i++) {
         int x0, y0, x1, y1;
         bool in0 = project_if_in_range(pts[i - 1], home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x0, y0);
@@ -203,39 +205,33 @@ static void draw_path(
 		// (可選)防 watchdog / 讓系統喘氣: 每 32 條線讓出一下 CPU
 		if ((i & 31) == 0) yield();
 		 
-    }
-	
-	/* 	*/
+    }     */
 	
 	//
 	// Style 2: map畫出radar circle外
+	// -Uncomment本function: 若用Style 1.
     for (int i = 1; i < n; i++) {
-        int x0, y0, x1, y1;
         int x0, y0, x1, y1;
         bool in0 = project_to_pixel(pts[i - 1], home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x0, y0);  // 若沒改名就繼續用 project_if_in_range
         bool in1 = project_to_pixel(pts[i],     home_lat, home_lon, cos_lat, range_nm, scale, cx, cy, x1, y1);
 
-		//
         // 允許畫出 circle 外. 但不讓線碰到 status bar (y < 20). 同時rough screen檢查, 免極端座標.
 		// if (in0 && in1): 
 		// - 線段的2點都 within 2.5 倍的幾何緩衝區, 條件才成立;
-		// - 線段其中1點不在 2.5 倍的幾何緩衝區, 條件不成立.
-		，而另一個端點落在之外（in1 = false），這整條線段（line a）就會因為條件不成立而完全不被繪製。
+		// - 線段只要其中1點不在 2.5 倍的幾何緩衝區, 條件不成立->完全不繪製.
         if (in0 && in1) {
-
-			/*			
+		
 			// 不超越頂status bar (STATUS_H=20), 也不要畫太離譜
-			Even within 2.5倍的幾何緩衝區, 仍有機畫到status bar裡面, so加下面condition:
-			1. y0 >= 20 && y1 >= 20(最重要): 當線段的2端點 Y axis都= or <20, 才畫線.
-			完全切斷任何畫入頂部 Status Bar (Y < 20)
-			2. y0 < 250 && y1 < 250 (螢幕bottom防護): 螢幕高只有240 px (Y : 0~239). 此處放寬至250px緩衝.
-			免draw出螢幕下方過遠的線段.
-			3. x0 > -50 && x0 < 370 && x1 > -50 && x1 < 370 (左右邊界與防溢位)
-			螢幕寬320 px (X: 0 ~ 319). 此處:左放寬到 -50, 右放寬到 370.
-			目的: TFT_eSPI具裁剪Clipping功能, 如丟的axis val太離譜(如X axis 達數千, 極大負數), 
-			可能繪圖庫整數溢位Integer Overflow, 令螢幕出現奇怪穿過全螢幕斜線(飛線). 
-			這行是安全網, 將過度極端的座標filter.
-			*/
+			// Even within 2.5倍的幾何緩衝區, 仍有機畫到status bar裡面, so加下面condition:
+			// 1. y0 >= 20 && y1 >= 20(最重要): 當線段的2端點 Y axis都= or <20, 才畫線.
+			// 完全切斷任何畫入頂部 Status Bar (Y < 20)
+			// 2. y0 < 250 && y1 < 250 (螢幕bottom防護): 螢幕高只有240 px (Y : 0~239). 此處放寬至250px緩衝.
+			// 免draw出螢幕下方過遠的線段.
+			// 3. x0 > -50 && x0 < 370 && x1 > -50 && x1 < 370 (左右邊界與防溢位)
+			// 螢幕寬320 px (X: 0 ~ 319). 此處:左放寬到 -50, 右放寬到 370.
+			// 目的: TFT_eSPI具裁剪Clipping功能, 如丟的axis val太離譜(如X axis 達數千, 極大負數), 
+			// 可能繪圖庫整數溢位Integer Overflow, 令螢幕出現奇怪穿過全螢幕斜線(飛線). 
+			// 這行是安全網, 將過度極端的座標filter.
             if (y0 >= 20 && y1 >= 20 && 
                 y0 < 250 && y1 < 250 && 
                 x0 > -50 && x0 < 370 && x1 > -50 && x1 < 370) {
@@ -460,8 +456,8 @@ void hk_map_draw(
 	2. 算 Cosine: cos(0.391) approx= 0.924
 	這0.924什麼意思? 代表在香港這緯度，經度差1度的實際東西距離, 只有赤道的92.4%寬.
 	
-當這行程式碼算出 cos_lat = 0.924 之後，它會傳進我們一開始看的 project_to_pixel 函數裡:float nm_e = dlon * 60.0f * cos_lat;
-這就派上用場了：經度差 * 60 海浬 * 0.924（折扣率），精準算出你在地球上真正的東西向實際海浬，才不會因為地球是圓的而把地圖畫變形！
+	計到cos_lat=0.924後->pass去project_to_pixel()裡: float nm_e = dlon * 60.0f * cos_lat;
+	即: 經度差 * 60浬 * 0.924(折扣率), 精準計地球上真正東西方向實際海浬 (不因地球是圓把地圖畫變形).
 	*/
     float cos_lat = cosf(home_lat * (float)M_PI / 180.0f);
     float scale = (float)radar_r / range_nm;
