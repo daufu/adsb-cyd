@@ -1,0 +1,10 @@
+d:/n/arduino-1.8.19/portable/packages/esp32/tools/xtensa-esp32-elf-gcc/esp-2021r2-patch5-8.4.0/bin/../lib/gcc/xtensa-esp32-elf/8.4.0/../../../../xtensa-esp32-elf/bin/ld.exe: C:\Users\COMPUT~1\AppData\Local\Temp\arduino_build_127432/adsb-cyd-main.ino.elf section `.dram0.bss' will not fit in region `dram0_0_seg'
+d:/n/arduino-1.8.19/portable/packages/esp32/tools/xtensa-esp32-elf-gcc/esp-2021r2-patch5-8.4.0/bin/../lib/gcc/xtensa-esp32-elf/8.4.0/../../../../xtensa-esp32-elf/bin/ld.exe: DRAM segment data does not fit.
+d:/n/arduino-1.8.19/portable/packages/esp32/tools/xtensa-esp32-elf-gcc/esp-2021r2-patch5-8.4.0/bin/../lib/gcc/xtensa-esp32-elf/8.4.0/../../../../xtensa-esp32-elf/bin/ld.exe: DRAM segment data does not fit.
+d:/n/arduino-1.8.19/portable/packages/esp32/tools/xtensa-esp32-elf-gcc/esp-2021r2-patch5-8.4.0/bin/../lib/gcc/xtensa-esp32-elf/8.4.0/../../../../xtensa-esp32-elf/bin/ld.exe: region `dram0_0_seg' overflowed by 12560 bytes
+collect2.exe: error: ld returned 1 exit status
+Multiple libraries were found for "WiFi.h"
+ Used: D:\n\arduino-1.8.19\portable\packages\esp32\hardware\esp32\2.0.11\libraries\WiFi
+ Not used: D:\n\arduino-1.8.19\libraries\WiFi
+exit status 1
+Error compiling for board ESP32 Dev Module.
