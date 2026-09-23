@@ -68,6 +68,9 @@ UserConfig storage_load_config() {
 }
 
 void storage_save_config(const UserConfig &cfg) {
+	//暫時不SAVE NVS
+	Serial.println("Storage: Disable! Do not save to NVS ATM");
+	/*
     _prefs.begin("adsb", false); // read-write
 
     _prefs.putString("ssid", cfg.wifi_ssid);
@@ -94,4 +97,5 @@ void storage_save_config(const UserConfig &cfg) {
 
     _prefs.end();
     Serial.println("Storage: config saved to NVS");
+	*/
 }
