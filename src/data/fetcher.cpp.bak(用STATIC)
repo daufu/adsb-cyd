@@ -326,6 +326,23 @@ static void fetch_task(void *param) {
              HOME_LAT, HOME_LON, ADSB_RADIUS_NM);
     Serial.printf("ADS-B API URL: %s\n", url);
 
+	//
+	// 功用:限制最大 buffer, 避免忙區JSON把DRAM打爆
+	// - 17-23飛機,JSON大小: 12-18 KB(繁忙時可能25-40KB)
+	// 單架object大小 = 400-800 bytes(desc,ownOp,很多導航欄更大)
+	// 公式: 大小 = 固定overhead(200B)+飛機數*每架平均bytes
+	// MAX_AIRCRAFT=25: 理論最差25 * 800 ≈ 20KB,再加安全係數.
+	// 25*800=20000 bytes; 20000bytes/1000 = 20 KB (1KB=1000bytes) 
+	// - why 28KB 通常夠？ radius=40 + MAX=25: 實測多半<20KB. 28KB有餘裕.
+    // - 先試28KB. 量測後可再調 24 或 32
+	const size_t BUF_CAP = 28 * 1024; //const size_t BUF_CAP = 48 * 1024;
+    static char static_buf[BUF_CAP + 1]; //替代(原本)malloc 的靜態快取,永不free
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+static JsonDocument doc; //V7的靜態JsonDocument
+#else
+static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
+#endif
+	
     while (true) {
         if (network_connected()) {
             if (http_mutex_acquire(pdMS_TO_TICKS(15000))) {
@@ -352,24 +369,20 @@ static void fetch_task(void *param) {
                     size_t buf_size = (content_len > 0) ? (size_t)content_len + 1 : 64 * 1024;
                     char *buf = (char *)malloc(buf_size);*/
 					int content_len = http.getSize();
-					//
-					// 功用:限制最大 buffer, 避免忙區JSON把DRAM打爆
-					// - 17-23飛機,JSON大小: 12-18 KB(繁忙時可能25-40KB)
-					// 單架object大小 = 400-800 bytes(desc,ownOp,很多導航欄更大)
-					// 公式: 大小 = 固定overhead(200B)+飛機數*每架平均bytes
-					// MAX_AIRCRAFT=25: 理論最差25 * 800 ≈ 20KB,再加安全係數.
-					// 25*800=20000 bytes; 20000bytes/1000 = 20 KB (1KB=1000bytes) 
-					// - why 28KB 通常夠？ radius=40 + MAX=25: 實測多半<20KB. 28KB有餘裕.
-					// - 先試28KB. 量測後可再調 24 或 32
-                    const size_t BUF_CAP = 28 * 1024; //const size_t BUF_CAP = 48 * 1024;
+		
+					/*
+					// 改放 Static 全域區,不需要:
+                    //const size_t BUF_CAP = 28 * 1024; */
                     size_t buf_size;
                     if (content_len > 0) {
                         buf_size = (size_t)content_len + 1;
                         if (buf_size > BUF_CAP) buf_size = BUF_CAP;
                     } else {
                         buf_size = BUF_CAP;
-                    }
-                    char *buf = (char *)malloc(buf_size);
+                    }					
+					
+                    //不用malloc: 讓buf直接借用static_buf的安全空間                
+					char *buf =  static_buf;  //char *buf = (char *)malloc(buf_size);
                     size_t total = 0;
 
                     if (buf) {
@@ -419,14 +432,20 @@ static void fetch_task(void *param) {
                     af["roll"] = true;
                     af["nav_qnh"] = true;
 
-                    JsonDocument doc;
+					/*
+					// 改放 Static 全域區(static),不需要:
+                    //JsonDocument doc; */
                     DeserializationError err = (buf && total > 0)
                         ? deserializeJson(doc, buf, total, DeserializationOption::Filter(filter))
-                        : DeserializationError::EmptyInput;
-                    if (buf) free(buf);
+                        : DeserializationError::EmptyInput;  						
+            				
+					/* 
+					// 刪原本"if (buf) free(buf);"，因靜態記憶體絕不能被釋放	
+                    //if (buf) free(buf); */
 
                     if (!err) {
                         _fstats.fetch_ok++;
+											
                         Serial.printf("JSON OK, ac array ptr=%p, heap=%lu\n",
                             (void*)_aircraft_list->aircraft,
                             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -434,8 +453,17 @@ static void fetch_task(void *param) {
                         Serial.printf("Fetched %d ac, heap=%lu\n",
                             _aircraft_list->count,
                             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+						
+						// "JsonDocument doc;" 改放 Static 全域區(static):	
+						// 解析失敗也要記得清空 doc，防止殘留錯誤資料
+                        doc.clear(); 
                     } else {
                         _fstats.fetch_fail++;
+						
+						// "JsonDocument doc;" 改放 Static 全域區(static):	
+						// HTTP 連線失敗的防禦性清空
+						doc.clear();  
+						
                         error_log_add("JSON: %s", err.c_str());
                         Serial.printf("JSON error: %s\n", err.c_str());
                     }
@@ -448,6 +476,10 @@ static void fetch_task(void *param) {
 					//之後每次抓都拿不到鎖 → 再也不更新, 畫面永遠顯示舊資料
 					http.end();				//關掉HTTP/TLS
 					http_mutex_release();	//把鎖還回去
+					
+					// "JsonDocument doc;" 改放 Static 全域區(static):	
+					// 確保防禦性清除                   
+                    doc.clear(); 
                 }
 				
 				//http.end();
