@@ -185,7 +185,7 @@ static void parse_aircraft_json(JsonDocument &doc) {
         if (dist > (float)ADSB_RADIUS_NM) continue;
 
         // 先盡量收進暫存；若超過 MAX*2 就先停，避免爆
-        //if (parsed_count >= MAX_AIRCRAFT * 2) break;
+        if (parsed_count >= MAX_AIRCRAFT * 2) break;
 
         ParsedEntry &p = parsed[parsed_count];
         strlcpy(p.hex, obj["hex"] | "", sizeof(p.hex));
@@ -326,26 +326,6 @@ static void fetch_task(void *param) {
              HOME_LAT, HOME_LON, ADSB_RADIUS_NM);
     Serial.printf("ADS-B API URL: %s\n", url);
 
-	//
-	// 功用:限制最大 buffer, 避免忙區JSON把DRAM打爆
-	// - 17-23飛機,JSON大小: 12-18 KB(繁忙時可能25-40KB)
-	// 單架object大小 = 400-800 bytes(desc,ownOp,很多導航欄更大)
-	// 公式: 大小 = 固定overhead(200B)+飛機數*每架平均bytes
-	// MAX_AIRCRAFT=25: 理論最差25 * 800 ≈ 20KB,再加安全係數.
-	// 25*800=20000 bytes; 20000bytes/1000 = 20 KB (1KB=1000bytes) 
-	// - why 28KB 通常夠？ radius=40 + MAX=25: 實測多半<20KB. 28KB有餘裕.
-    // - 先試28KB. 量測後可再調 24 或 32
-	const size_t BUF_CAP = 28 * 1024; //const size_t BUF_CAP = 48 * 1024;
-    static char static_buf[BUF_CAP + 1]; //替代(原本)malloc 的靜態快取,永不free
-#if ARDUINOJSON_VERSION_MAJOR >= 7
-static JsonDocument doc; //V7的靜態JsonDocument
-#else
-static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
-#endif
-
-	static JsonDocument filter;
-	static bool filter_ready = false;
-
     while (true) {
         if (network_connected()) {
             if (http_mutex_acquire(pdMS_TO_TICKS(15000))) {
@@ -372,20 +352,24 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                     size_t buf_size = (content_len > 0) ? (size_t)content_len + 1 : 64 * 1024;
                     char *buf = (char *)malloc(buf_size);*/
 					int content_len = http.getSize();
-		
-					/*
-					// 改放 Static 全域區,不需要:
-                    //const size_t BUF_CAP = 28 * 1024; */
+					//
+					// 功用:限制最大 buffer, 避免忙區JSON把DRAM打爆
+					// - 17-23飛機,JSON大小: 12-18 KB(繁忙時可能25-40KB)
+					// 單架object大小 = 400-800 bytes(desc,ownOp,很多導航欄更大)
+					// 公式: 大小 = 固定overhead(200B)+飛機數*每架平均bytes
+					// MAX_AIRCRAFT=25: 理論最差25 * 800 ≈ 20KB,再加安全係數.
+					// 25*800=20000 bytes; 20000bytes/1000 = 20 KB (1KB=1000bytes) 
+					// - why 28KB 通常夠？ radius=40 + MAX=25: 實測多半<20KB. 28KB有餘裕.
+					// - 先試28KB. 量測後可再調 24 或 32
+                    const size_t BUF_CAP = 28 * 1024; //const size_t BUF_CAP = 48 * 1024;
                     size_t buf_size;
                     if (content_len > 0) {
                         buf_size = (size_t)content_len + 1;
                         if (buf_size > BUF_CAP) buf_size = BUF_CAP;
                     } else {
                         buf_size = BUF_CAP;
-                    }					
-					
-                    //不用malloc: 讓buf直接借用static_buf的安全空間                
-					char *buf =  static_buf;  //char *buf = (char *)malloc(buf_size);
+                    }
+                    char *buf = (char *)malloc(buf_size);
                     size_t total = 0;
 
                     if (buf) {
@@ -412,7 +396,6 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                     http_mutex_release(); // <-- release the mutex too, since we're done with the network
 
                     // Parse with filter — only extract fields we need
-					/*
                     JsonDocument filter;
                     JsonObject af = filter["ac"][0].to<JsonObject>();
                     af["hex"] = true;
@@ -434,48 +417,16 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                     af["tas"] = true;
                     af["nav_altitude_mcp"] = true;
                     af["roll"] = true;
-                    af["nav_qnh"] = true;  */
-					// 只初始化一次 filter
-					if (!filter_ready) {
-						filter.clear();
-						JsonObject af = filter["ac"][0].to<JsonObject>();
-						af["hex"] = true;
-						af["flight"] = true;
-						af["r"] = true;
-						af["t"] = true;
-						af["category"] = true;
-						af["desc"] = true;
-						af["ownOp"] = true;
-						af["lat"] = true;
-						af["lon"] = true;
-						af["alt_baro"] = true;
-						af["gs"] = true;
-						af["track"] = true;
-						af["baro_rate"] = true;
-						af["squawk"] = true;
-						af["mach"] = true;
-						af["ias"] = true;
-						af["tas"] = true;
-						af["nav_altitude_mcp"] = true;
-						af["roll"] = true;
-						af["nav_qnh"] = true;
-						filter_ready = true;
-					}
+                    af["nav_qnh"] = true;
 
-					/*
-					// 改放 Static 全域區(static),不需要:
-                    //JsonDocument doc; */
+                    JsonDocument doc;
                     DeserializationError err = (buf && total > 0)
                         ? deserializeJson(doc, buf, total, DeserializationOption::Filter(filter))
-                        : DeserializationError::EmptyInput;  						
-            				
-					/* 
-					// 刪原本"if (buf) free(buf);"，因靜態記憶體絕不能被釋放	
-                    //if (buf) free(buf); */
+                        : DeserializationError::EmptyInput;
+                    if (buf) free(buf);
 
                     if (!err) {
                         _fstats.fetch_ok++;
-											
                         Serial.printf("JSON OK, ac array ptr=%p, heap=%lu\n",
                             (void*)_aircraft_list->aircraft,
                             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -483,17 +434,8 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                         Serial.printf("Fetched %d ac, heap=%lu\n",
                             _aircraft_list->count,
                             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-						
-						// "JsonDocument doc;" 改放 Static 全域區(static):	
-						// 解析失敗也要記得清空 doc，防止殘留錯誤資料
-                        doc.clear(); 
                     } else {
                         _fstats.fetch_fail++;
-						
-						// "JsonDocument doc;" 改放 Static 全域區(static):	
-						// HTTP 連線失敗的防禦性清空
-						doc.clear();  
-						
                         error_log_add("JSON: %s", err.c_str());
                         Serial.printf("JSON error: %s\n", err.c_str());
                     }
@@ -506,10 +448,6 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
 					//之後每次抓都拿不到鎖 → 再也不更新, 畫面永遠顯示舊資料
 					http.end();				//關掉HTTP/TLS
 					http_mutex_release();	//把鎖還回去
-					
-					// "JsonDocument doc;" 改放 Static 全域區(static):	
-					// 確保防禦性清除                   
-                    doc.clear(); 
                 }
 				
 				//http.end();
@@ -524,7 +462,6 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
 }
 
 static void route_enrich_task(void *param) {
-	static JsonDocument route_doc;
     while (!network_connected()) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -568,7 +505,6 @@ static void route_enrich_task(void *param) {
             http.setTimeout(8000);
             int code = http.GET();
 
-			/*
             if (code == HTTP_CODE_OK) {
                 WiFiClient *stream = http.getStreamPtr();
                 JsonDocument doc;
@@ -582,23 +518,7 @@ static void route_enrich_task(void *param) {
                 }
             } else {
                 _fstats.enrich_fail++;
-            }  */
-			if (code == HTTP_CODE_OK) {
-				//不要把 WiFiClientSecure client/HTTPClient http改static (連線生命週期、殘留狀態易出怪問題)
-				//callsign,url,origin,dest維持stack區域變數即可
-				WiFiClient *stream = http.getStreamPtr();
-				route_doc.clear();
-				if (!deserializeJson(route_doc, *stream)) {
-					JsonObject route = route_doc["response"]["flightroute"];
-					strlcpy(origin, route["origin"]["iata_code"] | "", sizeof(origin));
-					strlcpy(dest, route["destination"]["iata_code"] | "", sizeof(dest));
-					_fstats.enrich_ok++;
-				} else {
-					_fstats.enrich_fail++;
-				}
-			} else {
-				_fstats.enrich_fail++;
-			}
+            }
             http.end();
             http_mutex_release();
         }

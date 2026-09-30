@@ -185,7 +185,7 @@ static void parse_aircraft_json(JsonDocument &doc) {
         if (dist > (float)ADSB_RADIUS_NM) continue;
 
         // 先盡量收進暫存；若超過 MAX*2 就先停，避免爆
-        //if (parsed_count >= MAX_AIRCRAFT * 2) break;
+        if (parsed_count >= MAX_AIRCRAFT * 2) break;
 
         ParsedEntry &p = parsed[parsed_count];
         strlcpy(p.hex, obj["hex"] | "", sizeof(p.hex));
@@ -342,10 +342,7 @@ static JsonDocument doc; //V7的靜態JsonDocument
 #else
 static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
 #endif
-
-	static JsonDocument filter;
-	static bool filter_ready = false;
-
+	
     while (true) {
         if (network_connected()) {
             if (http_mutex_acquire(pdMS_TO_TICKS(15000))) {
@@ -412,7 +409,6 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                     http_mutex_release(); // <-- release the mutex too, since we're done with the network
 
                     // Parse with filter — only extract fields we need
-					/*
                     JsonDocument filter;
                     JsonObject af = filter["ac"][0].to<JsonObject>();
                     af["hex"] = true;
@@ -434,33 +430,7 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                     af["tas"] = true;
                     af["nav_altitude_mcp"] = true;
                     af["roll"] = true;
-                    af["nav_qnh"] = true;  */
-					// 只初始化一次 filter
-					if (!filter_ready) {
-						filter.clear();
-						JsonObject af = filter["ac"][0].to<JsonObject>();
-						af["hex"] = true;
-						af["flight"] = true;
-						af["r"] = true;
-						af["t"] = true;
-						af["category"] = true;
-						af["desc"] = true;
-						af["ownOp"] = true;
-						af["lat"] = true;
-						af["lon"] = true;
-						af["alt_baro"] = true;
-						af["gs"] = true;
-						af["track"] = true;
-						af["baro_rate"] = true;
-						af["squawk"] = true;
-						af["mach"] = true;
-						af["ias"] = true;
-						af["tas"] = true;
-						af["nav_altitude_mcp"] = true;
-						af["roll"] = true;
-						af["nav_qnh"] = true;
-						filter_ready = true;
-					}
+                    af["nav_qnh"] = true;
 
 					/*
 					// 改放 Static 全域區(static),不需要:
@@ -524,7 +494,6 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
 }
 
 static void route_enrich_task(void *param) {
-	static JsonDocument route_doc;
     while (!network_connected()) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -568,7 +537,6 @@ static void route_enrich_task(void *param) {
             http.setTimeout(8000);
             int code = http.GET();
 
-			/*
             if (code == HTTP_CODE_OK) {
                 WiFiClient *stream = http.getStreamPtr();
                 JsonDocument doc;
@@ -582,23 +550,7 @@ static void route_enrich_task(void *param) {
                 }
             } else {
                 _fstats.enrich_fail++;
-            }  */
-			if (code == HTTP_CODE_OK) {
-				//不要把 WiFiClientSecure client/HTTPClient http改static (連線生命週期、殘留狀態易出怪問題)
-				//callsign,url,origin,dest維持stack區域變數即可
-				WiFiClient *stream = http.getStreamPtr();
-				route_doc.clear();
-				if (!deserializeJson(route_doc, *stream)) {
-					JsonObject route = route_doc["response"]["flightroute"];
-					strlcpy(origin, route["origin"]["iata_code"] | "", sizeof(origin));
-					strlcpy(dest, route["destination"]["iata_code"] | "", sizeof(dest));
-					_fstats.enrich_ok++;
-				} else {
-					_fstats.enrich_fail++;
-				}
-			} else {
-				_fstats.enrich_fail++;
-			}
+            }
             http.end();
             http_mutex_release();
         }
