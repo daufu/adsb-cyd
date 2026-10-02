@@ -30,14 +30,11 @@ static uint8_t  wx_map_tmp[WX_N * WX_N]; //decode時暫存，成功再memcpy
 png_buf是下載buffer (用完就free??): static(免fragment), 固定占48KB RAM.
 free heap長期<80KB->改 malloc(48*1024) + 原本largest-block檢查, 用完立刻free.
 */
-//原本: static uint8_t  png_static_buf[48 * 1024]; <-不能用,會dram overflow
-//改成下面 - .bss 直接少49,152 bytes:
-static constexpr int PNG_CAP = 48 * 1024;
-
+static uint8_t  png_static_buf[48 * 1024];
 static uint8_t *png_buf = nullptr;
 static int      png_len = 0;
 static int      png_pos = 0;
-//static bool     png_use_static = true;
+static bool     png_use_static = true;
 
 static PNG png;
 static int png_w = 0, png_h = 0;
@@ -350,10 +347,10 @@ static bool http_get_json(const char *url, size_t &out_len) {
 
 // PNG → static 或 malloc
 static bool http_get_png(const char *url) {
-    ////if (png_buf && !png_use_static) {
-    // 		free(png_buf);
-    //		png_buf = nullptr;
-    //}
+    if (png_buf && !png_use_static) {
+        free(png_buf);
+        png_buf = nullptr;
+    }
     png_len = 0;
     png_pos = 0;
 
@@ -379,16 +376,13 @@ static bool http_get_png(const char *url) {
         return false;
     }
 
-    /*
-	const int cap = 48 * 1024;	
+    const int cap = 48 * 1024;
     if (png_use_static) {
         png_buf = png_static_buf;
     } else {
         png_buf = (uint8_t *)malloc(cap);
         if (!png_buf) { http.end(); return false; }
-    }  */
-	const int cap = PNG_CAP;
-	if (!png_buf) { http.end(); return false; }  // 確保已init
+    }
 
     WiFiClient *stream = http.getStreamPtr();
     int pos = 0;
@@ -528,7 +522,7 @@ static bool fetch_and_decode(float range_nm) {
     bool p_ok = http_get_png(url);
     http_mutex_release();
     if (!p_ok) {
-        ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
+        if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
         return false;
     }
     Serial.printf("[WX] png %d bytes heap=%lu\n", png_len,
@@ -564,7 +558,7 @@ static bool fetch_and_decode(float range_nm) {
     int rc = png.open((const char *)"", pngOpen, pngClose, pngRead, pngSeek, pngDrawCB);
     if (rc != PNG_SUCCESS) {
         Serial.printf("[WX] png open fail %d\n", rc);
-        ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
+        if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
         png_len = 0;
         return false;
     }
@@ -575,7 +569,7 @@ static bool fetch_and_decode(float range_nm) {
     rc = png.decode(nullptr, 0); //開始解碼 自動多次pngDrawCB
 	
     png.close();
-    ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
+    if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
     png_len = 0;
     if (rc != PNG_SUCCESS) {
         Serial.printf("[WX] decode fail %d\n", rc);
@@ -635,20 +629,7 @@ void weather_init() {
     if (!_wx_buf_mtx) _wx_buf_mtx = xSemaphoreCreateMutex();
     Serial.printf("[WX] map %d+%d bytes static, png_static=%d\n",
                   (int)sizeof(wx_map), (int)sizeof(wx_map_tmp),
-                  (int)sizeof(PNG_CAP));
-
-	/*
-	static uint8_t png_static_buf[48 * 1024]; <-不能用,會dRam overflow 
-	用下面code. Why放init? 開機時heap完整, 易拿48KB連續記憶.
-	只malloc一次，不free → fragmentation幾乎0
-	*/
-	if (!png_buf) {
-		png_buf = (uint8_t*)heap_caps_malloc(PNG_CAP, MALLOC_CAP_8BIT);
-		if (!png_buf) {
-			Serial.println("[WX] png_buf malloc failed, disable weather");
-			_enabled = false;
-		}
-	}
+                  (int)sizeof(png_static_buf));
 }
 
 /*
@@ -717,20 +698,13 @@ static void weather_task(void *param) {
 
 void weather_start_task() {
     // Core 0、低優先；stack 先 10240，穩後可 8192
-	/*
     xTaskCreatePinnedToCore(
         weather_task, "weather",
         10240, nullptr,
         0,          // priority 低於 fetch(1)
         nullptr,
         0           // core 0
-    );  */	
-	//改用4096(words ≈ 16KB)通常夠
-	xTaskCreatePinnedToCore(
-    weather_task, "weather",
-    4096, nullptr,
-    0, nullptr, 0
-);
+    );
 }
 
 

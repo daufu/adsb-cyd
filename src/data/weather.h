@@ -20,7 +20,6 @@ void weather_start_task();
 
 bool weather_ready();
 void weather_set_range(float range_nm);
-bool weather_ready();
 uint32_t weather_last_update();
 
 
