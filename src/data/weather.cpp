@@ -7,6 +7,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <PNGdec.h>
+#include <new> //
 #include <math.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -39,7 +40,7 @@ static int      png_len = 0;
 static int      png_pos = 0;
 //static bool     png_use_static = true;
 
-static PNG png;
+static PNG *png = nullptr;  //static PNG png;
 static int png_w = 0, png_h = 0;
 
 // Buffer mutex: 只保護"swap瞬間"與"draw讀取"
@@ -141,7 +142,8 @@ static int pngDrawCB(PNGDRAW *pDraw) {
 
 	// 把這行color轉ST7789常用RGB565格式:
     // 透明底變黑/混合-Universal Blue無雨多半alpha=0; bkgd=0 表示黑底
-    png.getLineAsRGB565(pDraw, line, PNG_RGB565_LITTLE_ENDIAN, 0x00000000);
+    ////png.getLineAsRGB565(pDraw, line, PNG_RGB565_LITTLE_ENDIAN, 0x00000000);
+	png->getLineAsRGB565(pDraw, line, PNG_RGB565_LITTLE_ENDIAN, 0x00000000);
 
     const int y = pDraw->y; //當前解碼到第幾行(0-255)
     if (y < 0 || y >= png_h) return 1;
@@ -410,6 +412,7 @@ static bool http_get_png(const char *url) {
 
 
 static bool fetch_and_decode(float range_nm) {
+	if (!png) return false;
     if (WiFi.status() != WL_CONNECTED) return false;
 
 	// ==下載前Heap檢查 ==
@@ -561,20 +564,25 @@ static bool fetch_and_decode(float range_nm) {
     }  */
 	// ---- D: decode → tmp（不 lock buffer）----
     memset(wx_map_tmp, 0, sizeof(wx_map_tmp)); //把64x64臨時陣列清空為0
-    int rc = png.open((const char *)"", pngOpen, pngClose, pngRead, pngSeek, pngDrawCB);
+    ////int rc = png.open((const char *)"", pngOpen, pngClose, pngRead, pngSeek, pngDrawCB);
+	int rc = png->open((const char *)"", pngOpen, pngClose, pngRead, pngSeek, pngDrawCB);
     if (rc != PNG_SUCCESS) {
         Serial.printf("[WX] png open fail %d\n", rc);
         ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
         png_len = 0;
         return false;
     }
-    png_w = png.getWidth();
-    png_h = png.getHeight();
+    ////png_w = png.getWidth();
+	png_w = png->getWidth();
+    ////png_h = png.getHeight();
+	png_h = png->getHeight();
 	
 	//png.decode()極小RAM處理大圖: 不一次整圖decode放RAM: 解碼0th行→call pngDrawCB → 解碼1st行→ call pngDrawCB...
-    rc = png.decode(nullptr, 0); //開始解碼 自動多次pngDrawCB
+    ////rc = png.decode(nullptr, 0); //開始解碼 自動多次pngDrawCB
+    rc = png->decode(nullptr, 0); //開始解碼 自動多次pngDrawCB
 	
-    png.close();
+    ////png.close();
+	png->close();
     ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
     png_len = 0;
     if (rc != PNG_SUCCESS) {
@@ -635,7 +643,7 @@ void weather_init() {
     if (!_wx_buf_mtx) _wx_buf_mtx = xSemaphoreCreateMutex();
     Serial.printf("[WX] map %d+%d bytes static, png_static=%d\n",
                   (int)sizeof(wx_map), (int)sizeof(wx_map_tmp),
-                  (int)sizeof(PNG_CAP));
+                  PNG_CAP);
 
 	/*
 	static uint8_t png_static_buf[48 * 1024]; <-不能用,會dRam overflow 
@@ -648,6 +656,16 @@ void weather_init() {
 			Serial.println("[WX] png_buf malloc failed, disable weather");
 			_enabled = false;
 		}
+	}
+	
+	if (!png) {
+		void *mem = heap_caps_malloc(sizeof(PNG), MALLOC_CAP_8BIT);
+		if (!mem) {
+			Serial.println("[WX] PNG malloc failed, disable weather");
+			_enabled = false;
+			return;
+		}
+		png = new (mem) PNG();  // placement new：只做一次，之後唔 free
 	}
 }
 
