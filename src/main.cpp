@@ -1574,7 +1574,9 @@ void setup() {
     aircraft_list.init();
     enrichment_init();
     fetcher_init(&aircraft_list);
+	
 	weather_init();  //weather
+	weather_start_task();  //weather 
 
     // Apply persisted settings
     pal = g_config.night_mode ? &PALETTE_NIGHT : &PALETTE_GREEN;
@@ -1685,7 +1687,7 @@ void loop() {
 	
 	//weather
 	weather_set_range(RANGES[range_idx]); 
-    weather_poll();
+    ////weather_poll();
 	
     delay(5);
 }
