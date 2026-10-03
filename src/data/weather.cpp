@@ -32,8 +32,8 @@ png_buf是下載buffer (用完就free??): static(免fragment), 固定占48KB RAM
 free heap長期<80KB->改 malloc(48*1024) + 原本largest-block檢查, 用完立刻free.
 */
 //原本: static uint8_t  png_static_buf[48 * 1024]; <-不能用,會dram overflow
-//改成下面 - .bss 直接少49,152 bytes:
-static constexpr int PNG_CAP = 48 * 1024;
+//改48 * 1024 - .bss 直接少49,152 bytes:
+static constexpr int PNG_CAP = 24 * 1024;
 
 static uint8_t *png_buf = nullptr;
 static int      png_len = 0;
@@ -360,8 +360,10 @@ static bool http_get_png(const char *url) {
     png_pos = 0;
 
     size_t free_h = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    size_t max_b  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
-    if (free_h < 70000 || max_b < 50000) {
+    size_t max_b  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);	
+    //下載前fetch_and_decode()已查1次; 這裡第2道，數字比外層略低.
+	// 原本: if (free_h < 70000 || max_b < 50000) {
+	if (free_h < 50000 || max_b < 35000) {
         Serial.printf("[WX] low mem free=%u maxblk=%u\n", (unsigned)free_h, (unsigned)max_b);
         return false;
     }
@@ -421,8 +423,11 @@ static bool fetch_and_decode(float range_nm) {
     // 最大連續heap (Bytes)
     size_t max_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
 
-    // 90KB = 92160 Bytes, 60KB = 61440 Bytes
-    if (free_heap < 92160 || max_block < 61440) {
+	//
+    // 原本: 90KB = 92160 Bytes, 60KB = 61440 Bytes
+	// 再改少: 實機無天氣free常>90k;有24KB png_buf後目標維持 free>=55k,maxblk>=40k
+    //if (free_heap < 92160 || max_block < 61440) {    
+	if  (free_heap < 55000 || max_block < 40000) {
         Serial.printf("[WX] Abort download. Insufficent HEAP! Free: %lu, Largest Blk: %lu\n",(unsigned long)free_heap, (unsigned long)max_block);
         return false; // 直接退出，把資源留給航班雷達
     }
@@ -508,7 +513,8 @@ static bool fetch_and_decode(float range_nm) {
     Serial.printf("[WX] Prepare to dl PNG, largest free block: %lu\n", (unsigned long)max_block_before_png);
     // 因為底下的 http_get_to_buf 設定了最大 48 * 1024 (49152 Bytes) 的空間
     // 如果最大連續區塊小於 50000 Bytes，一定會當機，所以必須阻擋
-    if (max_block_before_png < 50000) {
+    //if (max_block_before_png < 50000) {
+	if (max_block_before_png < 28000) {  // 24KB 緩衝 + 一點餘裕
         Serial.println("[WX] Insufficent largest block, Abort dl png.");
         return false;
     }
@@ -708,6 +714,14 @@ static void weather_task(void *param) {
     // ★ 啟動後至少 20 秒
     vTaskDelay(pdMS_TO_TICKS(WX_FIRST_DELAY_MS));
 
+	// 等 ADS-B 至少成功一次，避免開機搶 TLS heap
+	extern uint32_t fetcher_last_update();  // 已在 fetcher.h，可改 #include "fetcher.h"
+	while (fetcher_last_update() == 0) {
+		vTaskDelay(pdMS_TO_TICKS(2000));
+	}
+	vTaskDelay(pdMS_TO_TICKS(5000));  // 成功後再多等 5 秒
+
+
     for (;;) {
         if (!_enabled) {
             vTaskDelay(pdMS_TO_TICKS(2000));
@@ -743,7 +757,7 @@ void weather_start_task() {
         nullptr,
         0           // core 0
     );  */	
-	//改用4096(words ≈ 16KB)通常夠
+	//改4096(words=16KB)通常夠.可試6144,8192
 	xTaskCreatePinnedToCore(
     weather_task, "weather",
     4096, nullptr,

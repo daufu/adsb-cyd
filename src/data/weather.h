@@ -5,10 +5,13 @@
 
 //WX_N? 強度圖解析度(奇數較好，中心對齊). 128→16KB; 64→4KB；
 //RAM緊可48,畫質略降. 原128
-#define WX_N				64  
+#define WX_N				64 
 #define WX_UPDATE_MS		(10UL * 60UL * 1000UL) //10min
 #define WX_MIN_INTENSITY	8 //低於此當無雨，不畫
-#define WX_FIRST_DELAY_MS	(20UL * 1000UL) //啟動後20秒才第一次
+
+// 原 #define WX_FIRST_DELAY_MS	(20UL * 1000UL) //啟動後20秒才第一次
+// 改90: 等ADS-B先穩定抓幾輪. 自己試80
+#define WX_FIRST_DELAY_MS	(80UL * 1000UL) 
 
 void weather_init();
 
