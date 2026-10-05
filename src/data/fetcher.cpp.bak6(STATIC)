@@ -362,10 +362,6 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
                 Serial.printf("Fetch: HTTP %d, %lums, heap=%lu\n",
                     httpCode, (unsigned long)(millis() - t0),
                     (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-				if (httpCode < 0) { //自己加. HTTP -1 是TLS/heap?
-					Serial.printf("Fetch Err: %s\n", http.errorToString(httpCode).c_str());
-					Serial.printf("maxblk=%lu\n",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-				}
 
                 if (httpCode == HTTP_CODE_OK) {
                     _fstats.last_fetch_ms = millis() - t0;
@@ -571,14 +567,7 @@ static void route_enrich_task(void *param) {
             http.setUserAgent("adsb-cyd-proj/1.0"); // ←加這行
             http.setTimeout(8000);
             int code = http.GET();
-			//自己加.
-			Serial.printf("Route: HTTP %d, heap=%lu\n", code, 
-				(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-			if (code < 0) { // HTTP -1 是TLS/heap?
-				Serial.printf("Route Err: %s\n", http.errorToString(code).c_str());
-				Serial.printf("maxblk=%lu\n",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-			}
-				
+
 			/*
             if (code == HTTP_CODE_OK) {
                 WiFiClient *stream = http.getStreamPtr();

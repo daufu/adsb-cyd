@@ -33,7 +33,7 @@ free heap長期<80KB->改 malloc(48*1024) + 原本largest-block檢查, 用完立
 */
 //原本: static uint8_t  png_static_buf[48 * 1024]; <-不能用,會dram overflow
 //改48 * 1024 - .bss 直接少49,152 bytes:
-static constexpr int PNG_CAP = 16 * 1024;//24 * 1024->20 * 1024;
+static constexpr int PNG_CAP = 24 * 1024;
 
 static uint8_t *png_buf = nullptr;
 static int      png_len = 0;
@@ -325,17 +325,10 @@ static bool http_get_json(const char *url, size_t &out_len) {
 
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
-        Serial.printf("[WX-get_json] GET fail %d\n", code);
+        Serial.printf("[WX] GET fail %d\n", code);
         http.end();
         return false;
     }
-	
-	Serial.printf("[WX-get_json] HTTP %d, heap=%lu\n",
-		code, (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-	if (code < 0) { // HTTP -1 是TLS/heap?
-		Serial.printf("[WX-get_json] Err: %s\n", http.errorToString(code).c_str());
-		Serial.printf("maxblk=%lu\n",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-	}
 
     WiFiClient *stream = http.getStreamPtr();
     int pos = 0;
@@ -371,7 +364,7 @@ static bool http_get_png(const char *url) {
     //下載前fetch_and_decode()已查1次; 這裡第2道，數字比外層略低.
 	// 原本: if (free_h < 70000 || max_b < 50000) {
 	if (free_h < 50000 || max_b < 35000) {
-        Serial.printf("[WX-get_png] low mem free=%u maxblk=%u\n", (unsigned)free_h, (unsigned)max_b);
+        Serial.printf("[WX] low mem free=%u maxblk=%u\n", (unsigned)free_h, (unsigned)max_b);
         return false;
     }
 
@@ -383,30 +376,12 @@ static bool http_get_png(const char *url) {
     http.setUserAgent("adsb-cyd-wx/1.0");
     http.setTimeout(15000);
 
-	/* PNG_CAP調小. 再下面code讀到cap大小就停(pos < cap).若PNG實際大小 > cap (會截斷下載) -> 拿"截斷PNG"餵 PNGdec:
-	->解碼失敗/解碼lib處理不嚴致ram踩踏(color亂,無故reset)
-	此if 下載前查Content-Length(如server有給) -> 寧"這次天氣不更新";也不用截斷資料decode.
-	*/
-	int len = http.getSize(); //可能-1(chunked);有值通常是Content-Length
-	if (len > 0 && len > PNG_CAP) {
-	  Serial.printf("[WX-get_png] PNG too big: %d > cap %d, skip\n", len, PNG_CAP);
-	  http.end();
-	  return false;
-	}
-
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
-        Serial.printf("[WX-get_png] PNG fail %d\n", code);
+        Serial.printf("[WX] PNG fail %d\n", code);
         http.end();
         return false;
-    }	
-	
-	Serial.printf("[WX-get_png] HTTP %d, heap=%lu\n",
-		code, (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-	if (code < 0) { // HTTP -1 是TLS/heap?
-		Serial.printf("[WX-get_png] Err: %s\n", http.errorToString(code).c_str());
-		Serial.printf("maxblk=%lu\n",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-	}
+    }
 
     /*
 	const int cap = 48 * 1024;	
@@ -447,12 +422,13 @@ static bool fetch_and_decode(float range_nm) {
     size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     // 最大連續heap (Bytes)
     size_t max_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+
 	//
     // 原本: 90KB = 92160 Bytes, 60KB = 61440 Bytes
 	// 再改少: 實機無天氣free常>90k;有24KB png_buf後目標維持 free>=55k,maxblk>=40k
     //if (free_heap < 92160 || max_block < 61440) {    
 	if  (free_heap < 55000 || max_block < 40000) {
-        Serial.printf("[WX-Decode] Abort DL (low HEAP: free<550k/maxblk<40k)! Free %lu, maxblk %lu\n",(unsigned long)free_heap, (unsigned long)max_block);
+        Serial.printf("[WX] Abort download. Insufficent HEAP! Free: %lu, Largest Blk: %lu\n",(unsigned long)free_heap, (unsigned long)max_block);
         return false; // 直接退出，把資源留給航班雷達
     }
     // ================
@@ -478,7 +454,7 @@ static bool fetch_and_decode(float range_nm) {
     }  */
 	// ---- A: JSON（http_mutex）----
     if (!http_mutex_acquire(pdMS_TO_TICKS(3000))) {
-        Serial.println("[WX-Decode] http mutex busy (json)");
+        Serial.println("[WX] http mutex busy (json)");
         return false;
     }
     size_t jlen = 0;
@@ -513,7 +489,7 @@ static bool fetch_and_decode(float range_nm) {
     wx_doc.clear();
     DeserializationError err = deserializeJson(wx_doc, wx_json_buf, jlen);
     if (err) {
-        Serial.printf("[WX-Decode] json err %s\n", err.c_str());
+        Serial.printf("[WX] json err %s\n", err.c_str());
         return false;
     }
     const char *host = wx_doc["host"] | "https://tilecache.rainviewer.com";
@@ -528,18 +504,18 @@ static bool fetch_and_decode(float range_nm) {
     char url[256];
     snprintf(url, sizeof(url), "%s%s/256/%d/%.4f/%.4f/2/1_0.png",
              host, path, z, (double)HOME_LAT, (double)HOME_LON);  // size=256, color=2, smooth=1 snow=0
-    Serial.printf("[WX-Decode] tile %s\n", url);
+    Serial.printf("[WX] tile %s\n", url);
     wx_doc.clear(); // 立刻放掉 JSON 佔用
 	
 	
 	// == 第 2 道防線：下載 48KB PNG 前的終極檢查 ==
     size_t max_block_before_png = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
-    Serial.printf("[WX-Decode] Prepare to dl PNG, maxblk: %lu\n", (unsigned long)max_block_before_png);
+    Serial.printf("[WX] Prepare to dl PNG, largest free block: %lu\n", (unsigned long)max_block_before_png);
     // 因為底下的 http_get_to_buf 設定了最大 48 * 1024 (49152 Bytes) 的空間
     // 如果最大連續區塊小於 50000 Bytes，一定會當機，所以必須阻擋
     //if (max_block_before_png < 50000) {
-	if (max_block_before_png < 28000) {  // 24KB 緩衝 + 4kb一點餘裕 = 28000
-        Serial.println("[WX-Decode] Abort DL png (low maxblk: <28k)");
+	if (max_block_before_png < 28000) {  // 24KB 緩衝 + 一點餘裕
+        Serial.println("[WX] Insufficent largest block, Abort dl png.");
         return false;
     }
     // ===================================
@@ -555,7 +531,7 @@ static bool fetch_and_decode(float range_nm) {
 	*/
     // ---- C: PNG（http_mutex）----
     if (!http_mutex_acquire(pdMS_TO_TICKS(5000))) {
-        Serial.println("[WX-Decode] http mutex busy (png)");
+        Serial.println("[WX] http mutex busy (png)");
         return false;
     }
     bool p_ok = http_get_png(url);
@@ -564,7 +540,7 @@ static bool fetch_and_decode(float range_nm) {
         ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
         return false;
     }
-    Serial.printf("[WX-Decode] png %d bytes heap=%lu\n", png_len,
+    Serial.printf("[WX] png %d bytes heap=%lu\n", png_len,
                   (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 				  
 	
@@ -597,7 +573,7 @@ static bool fetch_and_decode(float range_nm) {
     ////int rc = png.open((const char *)"", pngOpen, pngClose, pngRead, pngSeek, pngDrawCB);
 	int rc = png->open((const char *)"", pngOpen, pngClose, pngRead, pngSeek, pngDrawCB);
     if (rc != PNG_SUCCESS) {
-        Serial.printf("[WX-Decode] png open fail %d\n", rc);
+        Serial.printf("[WX] png open fail %d\n", rc);
         ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
         png_len = 0;
         return false;
@@ -616,7 +592,7 @@ static bool fetch_and_decode(float range_nm) {
     ////if (png_buf && !png_use_static) { free(png_buf); png_buf = nullptr; }
     png_len = 0;
     if (rc != PNG_SUCCESS) {
-        Serial.printf("[WX-Decode] decode fail %d\n", rc);
+        Serial.printf("[WX] decode fail %d\n", rc);
         return false;
     }
 	
@@ -650,7 +626,7 @@ static bool fetch_and_decode(float range_nm) {
             wx_buf_give();
         }
     }
-    Serial.printf("[WX-Decode] ok heap=%lu\n",
+    Serial.printf("[WX] ok heap=%lu\n",
                   (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     return true;
 }
@@ -680,9 +656,6 @@ void weather_init() {
 	用下面code. Why放init? 開機時heap完整, 易拿48KB連續記憶.
 	只malloc一次，不free → fragmentation幾乎0
 	*/
-	/*
-	// 下列配置 png_buf / png (原本 setup()就做):
-	// 改等ADS‑B成功一次才做: code放weather_alloc_once(), 在weather_task() call.
 	if (!png_buf) {
 		png_buf = (uint8_t*)heap_caps_malloc(PNG_CAP, MALLOC_CAP_8BIT);
 		if (!png_buf) {
@@ -700,38 +673,6 @@ void weather_init() {
 		}
 		png = new (mem) PNG();  // placement new：只做一次，之後唔 free
 	}
-	*/
-}
-
-/*
-配置 png_buf / png.
-weather_task()等待過程： delay WX_FIRST_DELAY_MS -> while等fetcher_last_update() == 0 (ADS‑B至少成功一次) ->
-再等5秒 -> 然後call本func
-*/
-static bool weather_alloc_once() {
-    if (!_enabled) return false;
-    if (!png_buf) {
-        png_buf = (uint8_t*)heap_caps_malloc(PNG_CAP, MALLOC_CAP_8BIT);
-        if (!png_buf) {
-			Serial.printf("[WX] png_buf malloc failed,disable weather! free=%lu\n, maxblk=%lu\n",
-                (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-				(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-            _enabled = false;
-            return false;
-        }
-    }
-    if (!png) {
-        void *mem = heap_caps_malloc(sizeof(PNG), MALLOC_CAP_8BIT);
-        if (!mem) {
-            Serial.printf("[WX] PNG obj malloc failed,disable weather! free=%lu\n, maxblk=%lu\n",
-                (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-				(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-            _enabled = false;
-            return false;
-        }
-        png = new (mem) PNG();
-    }
-    return true;
 }
 
 /*
@@ -764,30 +705,22 @@ void weather_poll() {
     http_mutex_release();
     if (!ok) Serial.println("[WX] fetch failed");
 }*/
-/*
-weather_task()等待過程： 先 delay WX_FIRST_DELAY_MS -> while等fetcher_last_update() == 0 (ADS‑B至少成功一次) -> 
-再等5秒 -> 然後call weather_alloc_once()
-
-*/
 static void weather_task(void *param) {
     (void)param;
     // 等 WiFi
     while (WiFi.status() != WL_CONNECTED) {
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    // 啟動後等XX秒
+    // ★ 啟動後至少 20 秒
     vTaskDelay(pdMS_TO_TICKS(WX_FIRST_DELAY_MS));
 
-	// 等ADS-B至少成功一次, 免搶TLS heap. fetcher_last_update() == 0是指標. 
+	// 等 ADS-B 至少成功一次，避免開機搶 TLS heap
 	extern uint32_t fetcher_last_update();  // 已在 fetcher.h，可改 #include "fetcher.h"
 	while (fetcher_last_update() == 0) {
 		vTaskDelay(pdMS_TO_TICKS(2000));
 	}
-	vTaskDelay(pdMS_TO_TICKS(5000));  // 成功後再等5秒
-	
-	// 配置 png_buf / png (心須在此處):
-	// 開始就"HTTP -1"機率下降, 最吃heap PNG buffer不搶在ADS‑B TLS前面常駐.
-	if (!weather_alloc_once()) { vTaskDelete(nullptr); }
+	vTaskDelay(pdMS_TO_TICKS(5000));  // 成功後再多等 5 秒
+
 
     for (;;) {
         if (!_enabled) {
@@ -827,7 +760,7 @@ void weather_start_task() {
 	//改4096(words=16KB)通常夠.可試6144,8192
 	xTaskCreatePinnedToCore(
     weather_task, "weather",
-    6144, nullptr,   //拉高到 6144/8192 ////
+    4096, nullptr,
     0, nullptr, 0
 );
 }
