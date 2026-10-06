@@ -6,7 +6,13 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+
+// RainViewer固定256x256縮小line buffer(預設按320算)
+#ifndef PNG_MAX_BUFFERED_PIXELS
+#define PNG_MAX_BUFFERED_PIXELS ((256 * 4 + 1) * 2)   //約2KB,省3KB
+#endif
 #include <PNGdec.h>
+
 #include <new> //
 #include <math.h>
 #include <esp_heap_caps.h>
@@ -26,14 +32,17 @@ static float    _want_range = 50.0f;
 // 8-bit 強度圖（中心 = home）。static 不吃 heap fragment
 static uint8_t  wx_map[WX_N * WX_N]; //完整draw用
 static uint8_t  wx_map_tmp[WX_N * WX_N]; //decode時暫存，成功再memcpy
+static uint8_t  wx_map_draw[WX_N * WX_N]; //draw時snapshot,lock只持microseconds 
 
 /* 
 png_buf是下載buffer (用完就free??): static(免fragment), 固定占48KB RAM.
 free heap長期<80KB->改 malloc(48*1024) + 原本largest-block檢查, 用完立刻free.
 */
 //原本: static uint8_t  png_static_buf[48 * 1024]; <-不能用,會dram overflow
+//改24 * 1024,改20 * 1024,改16 * 1024
 //改48 * 1024 - .bss 直接少49,152 bytes:
-static constexpr int PNG_CAP = 16 * 1024;//24 * 1024->20 * 1024;
+//static constexpr int PNG_CAP = 16 * 1024;
+static constexpr int PNG_CAP = 20 * 1024; //試20,不夠24.RainViewer 256 tile多半<20kb,雨很大先更大d
 
 static uint8_t *png_buf = nullptr;
 static int      png_len = 0;
@@ -451,8 +460,9 @@ static bool fetch_and_decode(float range_nm) {
     // 原本: 90KB = 92160 Bytes, 60KB = 61440 Bytes
 	// 再改少: 實機無天氣free常>90k;有24KB png_buf後目標維持 free>=55k,maxblk>=40k
     //if (free_heap < 92160 || max_block < 61440) {    
-	if  (free_heap < 55000 || max_block < 40000) {
-        Serial.printf("[WX-Decode] Abort DL (low HEAP: free<550k/maxblk<40k)! Free %lu, maxblk %lu\n",(unsigned long)free_heap, (unsigned long)max_block);
+	//if (free_heap < 55000 || max_block < 40000) {
+	if (free_heap < 40000 || max_block < 25000) { //比前低一點即可
+        Serial.printf("[WX-Decode] Abort DL (low HEAP: free<40k/maxblk<25k)! Free %lu, maxblk %lu\n",(unsigned long)free_heap, (unsigned long)max_block);
         return false; // 直接退出，把資源留給航班雷達
     }
     // ================
@@ -667,40 +677,41 @@ void weather_init() {
 void weather_init() {
     memset(wx_map, 0, sizeof(wx_map));
     memset(wx_map_tmp, 0, sizeof(wx_map_tmp));
+    memset(wx_map_draw, 0, sizeof(wx_map_draw));
     _ready = false;
     _last_update = 0;
     _last_try = 0;
     if (!_wx_buf_mtx) _wx_buf_mtx = xSemaphoreCreateMutex();
-    Serial.printf("[WX] map %d+%d bytes static, png_static=%d\n",
-                  (int)sizeof(wx_map), (int)sizeof(wx_map_tmp),
-                  PNG_CAP);
+    Serial.printf("[WX] map %d+%d+%d bytes static, png_cap=%d\n",
+        (int)sizeof(wx_map), (int)sizeof(wx_map_tmp), (int)sizeof(wx_map_draw), PNG_CAP);
 
-	/*
-	static uint8_t png_static_buf[48 * 1024]; <-不能用,會dRam overflow 
-	用下面code. Why放init? 開機時heap完整, 易拿48KB連續記憶.
-	只malloc一次，不free → fragmentation幾乎0
-	*/
-	/*
-	// 下列配置 png_buf / png (原本 setup()就做):
-	// 改等ADS‑B成功一次才做: code放weather_alloc_once(), 在weather_task() call.
-	if (!png_buf) {
-		png_buf = (uint8_t*)heap_caps_malloc(PNG_CAP, MALLOC_CAP_8BIT);
-		if (!png_buf) {
-			Serial.println("[WX] png_buf malloc failed, disable weather");
-			_enabled = false;
-		}
-	}
 	
-	if (!png) {
-		void *mem = heap_caps_malloc(sizeof(PNG), MALLOC_CAP_8BIT);
-		if (!mem) {
-			Serial.println("[WX] PNG malloc failed, disable weather");
-			_enabled = false;
-			return;
-		}
-		png = new (mem) PNG();  // placement new：只做一次，之後唔 free
-	}
-	*/
+	// ★ 開機最早配，只一次，永不 free → 幾乎 0 fragmentation
+    // malloc 不搶 TCP，只有後面的 HTTP 才會
+    if (!png_buf) {
+        png_buf = (uint8_t*)heap_caps_malloc(PNG_CAP, MALLOC_CAP_8BIT);
+        if (!png_buf) {
+            Serial.println("[WX] png_buf malloc failed, disable weather");
+            _enabled = false;
+        }
+    }
+
+    if (!png && _enabled) {
+        void *mem = heap_caps_malloc(sizeof(PNG), MALLOC_CAP_8BIT);
+        if (!mem) {
+            Serial.printf("[WX] PNG obj malloc failed! sizeof(PNG)=%u free=%lu maxblk=%lu\n",
+                (unsigned)sizeof(PNG), (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+            _enabled = false;
+            return;
+        }
+        png = new (mem) PNG();  // placement new，只做一次
+    }
+
+    Serial.printf("[WX] sizeof(PNG)=%u png_buf=%p png=%p free=%lu maxblk=%lu\n",
+        (unsigned)sizeof(PNG), (void*)png_buf, (void*)png,
+		(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 }
 
 /*
@@ -709,6 +720,7 @@ weather_task()等待過程： delay WX_FIRST_DELAY_MS -> while等fetcher_last_up
 再等5秒 -> 然後call本func
 */
 static bool weather_alloc_once() {
+	/*
     if (!_enabled) return false;
     if (!png_buf) {
         png_buf = (uint8_t*)heap_caps_malloc(PNG_CAP, MALLOC_CAP_8BIT);
@@ -730,7 +742,7 @@ static bool weather_alloc_once() {
             return false;
         }
         png = new (mem) PNG();
-    }
+    }    */
     return true;
 }
 
@@ -785,9 +797,13 @@ static void weather_task(void *param) {
 	}
 	vTaskDelay(pdMS_TO_TICKS(5000));  // 成功後再等5秒
 	
-	// 配置 png_buf / png (心須在此處):
-	// 開始就"HTTP -1"機率下降, 最吃heap PNG buffer不搶在ADS‑B TLS前面常駐.
-	if (!weather_alloc_once()) { vTaskDelete(nullptr); }
+    // ★ 這裡不要再 alloc！init 已配好
+    if (!png_buf || !png) {
+        Serial.println("[WX] buffers missing, disable");
+        _enabled = false;
+        vTaskDelete(nullptr);
+        return;
+    }
 
     for (;;) {
         if (!_enabled) {
@@ -889,15 +905,19 @@ void weather_draw_overlay(
     // try-lock：拿不到就這幀仍畫weather（因swap 極短通常拿得到）
     if (!wx_buf_take(0)) {
         // 仍畫weather(資料是舊,即上一完整幀).也可uncomment下一行直接return -> 免風險
-        //return;
+        return;
         // 建議短等一下
-        if (!wx_buf_take(pdMS_TO_TICKS(2))) return;
+        //if (!wx_buf_take(pdMS_TO_TICKS(2))) return;
     }
 	
+	// lock 期間只做極短 snapshot（4KB memcpy ≈ 微秒級）
+    memcpy(wx_map_draw, wx_map, sizeof(wx_map_draw));
 	// base: 目前天氣圖基於多少海浬下載
     float base = _stored_for_range > 1.0f ? _stored_for_range : range_nm;
+	wx_buf_give(); //★立刻放鎖! 之後draw完全不持鎖
+	
 	// half: 64x64陣列中心點 (63 * 0.5 = 31.5)
-    const float half = (WX_N - 1) * 0.5f;
+	const float half = (WX_N - 1) * 0.5f;
 	// nm_per_wx: 陣列裡每一個格子，代表現實中多少海浬
     const float nm_per_wx = (2.0f * base) / (float)WX_N;
 	// scale: 螢幕像素與海浬的縮放比例 (保留原版的完美設計)
@@ -911,7 +931,7 @@ void weather_draw_overlay(
         float nm_n = (half - (float)j) * nm_per_wx;
         for (int i = 0; i < WX_N; i++) {
 			// 讀天氣強度(0~255)
-            uint8_t v = wx_map[j * WX_N + i];
+            uint8_t v = wx_map_draw[j * WX_N + i]; // ← 用 snapshot
 			// 如強度太低(沒下雨)，跳過不畫 節省效能
             if (v < WX_MIN_INTENSITY) continue;
 			// 算這格在現實中距離中心點的"東方(X)"多少海浬
@@ -947,8 +967,9 @@ void weather_draw_overlay(
 		//每畫完一行(16的倍數),讓CPU給其他FreeRTOS任務,免Watchdog報錯重啟
         if ((j & 15) == 0) yield();
     }
-
-    wx_buf_give();
+	
+	//結尾不要再wx_buf_give()
+    //wx_buf_give();
 }
 
 
