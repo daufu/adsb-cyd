@@ -392,6 +392,13 @@ static bool http_get_png(const char *url) {
     http.setUserAgent("adsb-cyd-wx/1.0");
     http.setTimeout(15000);
 
+    int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+        Serial.printf("[WX-get_png] PNG fail %d\n", code);
+        http.end();
+        return false;
+    }	
+	
 	/* PNG_CAP調小. 再下面code讀到cap大小就停(pos < cap).若PNG實際大小 > cap (會截斷下載) -> 拿"截斷PNG"餵 PNGdec:
 	->解碼失敗/解碼lib處理不嚴致ram踩踏(color亂,無故reset)
 	此if 下載前查Content-Length(如server有給) -> 寧"這次天氣不更新";也不用截斷資料decode.
@@ -401,14 +408,7 @@ static bool http_get_png(const char *url) {
 	  Serial.printf("[WX-get_png] PNG too big: %d > cap %d, skip\n", len, PNG_CAP);
 	  http.end();
 	  return false;
-	}
-
-    int code = http.GET();
-    if (code != HTTP_CODE_OK) {
-        Serial.printf("[WX-get_png] PNG fail %d\n", code);
-        http.end();
-        return false;
-    }	
+	}	
 	
 	Serial.printf("[WX-get_png] HTTP %d, heap=%lu\n",
 		code, (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
