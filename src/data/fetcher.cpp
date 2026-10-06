@@ -523,6 +523,7 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
             error_log_add("Network down");
             WiFi.reconnect();
         }
+        Serial.printf("Fetcher_task: High Water Mark: %u words\n",(unsigned int)uxTaskGetStackHighWaterMark(NULL));
         vTaskDelay(pdMS_TO_TICKS(ADSB_POLL_INTERVAL_MS));
     }
 }
