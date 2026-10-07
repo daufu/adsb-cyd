@@ -229,6 +229,7 @@ static void fetch_task(void *param) {
 	// 因改用static EnrichParams s_enrich_params, 此行唔需要
     free(params); 	*/
     _task_running = false;
+	Serial.printf("Enrichment-High Water Mark: %uB\n",(unsigned int)uxTaskGetStackHighWaterMark(NULL));
     vTaskDelete(nullptr);
 }
 

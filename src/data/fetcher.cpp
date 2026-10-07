@@ -523,7 +523,7 @@ static StaticJsonDocument<BUF_CAP> doc; //V6的靜態StaticJsonDocument
             error_log_add("Network down");
             WiFi.reconnect();
         }
-        Serial.printf("Fetcher_task: High Water Mark: %u words\n",(unsigned int)uxTaskGetStackHighWaterMark(NULL));
+        Serial.printf("Fetch-High Water Mark: %uB\n",(unsigned int)uxTaskGetStackHighWaterMark(NULL));
         vTaskDelay(pdMS_TO_TICKS(ADSB_POLL_INTERVAL_MS));
     }
 }
@@ -627,7 +627,7 @@ static void route_enrich_task(void *param) {
             }
             _aircraft_list->unlock();
         }
-
+		Serial.printf("Route-High Water Mark: %uB\n",(unsigned int)uxTaskGetStackHighWaterMark(NULL));
         vTaskDelay(pdMS_TO_TICKS(1500));
     }
 }
@@ -651,7 +651,8 @@ void fetcher_init(AircraftList *list) {
 	*/
     //xTaskCreatePinnedToCore(fetch_task, "adsb_fetch", 32768, nullptr, 1, &_fetch_task_handle, 1);
     //xTaskCreatePinnedToCore(route_enrich_task, "route_enrich", 8192, nullptr, 0, &_route_task_handle, 1);
-	xTaskCreatePinnedToCore(fetch_task, "adsb_fetch", 16384, nullptr, 1, &_fetch_task_handle, 0); 	//default=32768
+	//default=32768->改16384->uxTaskGetStackHighWaterMark報12108-12120:改6144/8192
+	xTaskCreatePinnedToCore(fetch_task, "adsb_fetch", 6144, nullptr, 1, &_fetch_task_handle, 0); 	
     xTaskCreatePinnedToCore(route_enrich_task, "route_enrich", 6144, nullptr, 0, &_route_task_handle, 0);	//default=8192
 }
 
