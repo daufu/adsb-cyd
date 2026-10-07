@@ -8,6 +8,7 @@
 #include <TFT_eSPI.h>
 #include <math.h>
 #include <WiFi.h>
+#include <esp_bt.h> //關BT
 
 #include "config.h"
 #include "data/aircraft.h"
@@ -676,12 +677,13 @@ static void draw_radar() {
 		}
 		
 		// Weather echo（底圖層，每次 redraw 重畫，因 blip 擦除會蓋掉）
+		/*----*/
         weather_draw_overlay(
             tft,
             RANGES[range_idx],
             RADAR_CX, RADAR_CY, RADAR_R,
             g_config.night_mode
-        );
+        );           
 
         // Draw HK map 
 		hk_map_draw(tft, HOME_LAT, HOME_LON, RANGES[range_idx], RADAR_CX, RADAR_CY, RADAR_R, pal->map_line); //可試 pal->grid
@@ -1537,6 +1539,7 @@ static void auto_cycle() {
 
 void setup() {
     Serial.begin(115200);
+	esp_bt_controller_mem_release(ESP_BT_MODE_BTDM); //釋放藍牙ram增50-60KB Heap
     Serial.println("ADS-B CYD Radar starting...");
 
     // === 新增：關閉 CYD RGB LED（active LOW，HIGH=滅）===
