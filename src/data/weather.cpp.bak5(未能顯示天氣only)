@@ -6,6 +6,10 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+// RainViewer固定256x256縮小line buffer(預設按320算)
+#ifndef PNG_MAX_BUFFERED_PIXELS
+#define PNG_MAX_BUFFERED_PIXELS ((256 * 4 + 1) * 2)   //約2KB,省3KB
+#endif
 #include <PNGdec.h>
 #include <new> //
 #include <math.h>
